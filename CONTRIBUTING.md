@@ -6,19 +6,19 @@ Thank you for your interest in contributing to wails-pkceflow. This document exp
 
 1. Fork the repository
 2. Clone your fork locally
-3. Create a feature branch from `development`
+3. Create a feature branch from `master`
 4. Make your changes
-5. Submit a pull request targeting `development`
+5. Submit a pull request targeting `master`
 
 ## Branch Model
 
-This project uses a Gitflow variant:
+This project uses trunk-based development:
 
-- `master` - production releases (tagged `v*`)
-- `development` - integration branch, all PRs target here
+- `master` - main branch, always the latest working code
 - `feature/*` - new functionality
 - `fix/*` - bug fixes
 - `chore/*` - maintenance (deps, CI, tooling)
+- Releases are tagged on master (e.g., `v1.0.0`)
 
 ## Commit Messages
 
