@@ -1,15 +1,16 @@
 version: "2"
 
+formatters:
+  enable:
+    - goimports
+
 linters:
   enable:
     - errcheck
     - govet
     - staticcheck
     - unused
-    - gosimple
     - ineffassign
-    - typecheck
-    - goimports
     - misspell
     - gosec
     - bodyclose
