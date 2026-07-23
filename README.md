@@ -11,7 +11,7 @@ A [Wails v3](https://wails.io/) service wrapper for [go-pkceflow](https://github
 - Wails v3 service adapter with `ServiceStartup` / `ServiceShutdown` lifecycle
 - Automatic session restore, OIDC discovery, and background token refresh
 - Event bridge from go-pkceflow auth events to Wails application events
-- Deep link router for mobile auth callbacks (iOS Universal Links, Android App Links)
+- Deep link routing: connects Wails mobile lifecycle events (Universal Links, App Links) to go-pkceflow's mobile flow handler
 - Deferred event bus for Wails startup ordering
 
 ## Installation
