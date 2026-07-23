@@ -1,0 +1,44 @@
+version: "2"
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - unused
+    - gosimple
+    - ineffassign
+    - typecheck
+    - goimports
+    - misspell
+    - gosec
+    - bodyclose
+    - noctx
+    - gocritic
+    - revive
+  settings:
+    gosec:
+      excludes:
+        - G104  # Handled by errcheck
+    revive:
+      rules:
+        - name: blank-imports
+        - name: dot-imports
+        - name: error-return
+        - name: error-strings
+        - name: exported
+        - name: increment-decrement
+        - name: var-naming
+        - name: package-comments
+          disabled: true  # Package docs come later
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+          - errcheck
