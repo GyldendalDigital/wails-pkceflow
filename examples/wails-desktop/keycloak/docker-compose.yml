@@ -1,0 +1,21 @@
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    container_name: pkceflow-demo-keycloak
+    # start-dev runs an in-memory, HTTP-only Keycloak suitable for local demos.
+    # --import-realm loads /opt/keycloak/data/import/*.json on first boot.
+    command: ["start-dev", "--import-realm"]
+    environment:
+      # Master-realm admin console login (http://localhost:8080 -> admin/admin).
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./demo-realm.json:/opt/keycloak/data/import/demo-realm.json:ro
+    healthcheck:
+      # /realms/demo is served once the import has completed.
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /realms/demo HTTP/1.0\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '\"realm\":\"demo\"'"]
+      interval: 5s
+      timeout: 5s
+      retries: 30

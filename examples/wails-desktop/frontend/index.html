@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>go-pkceflow demo</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <!-- Notification center: backend auth events appear here as dismissable toasts. -->
+  <div id="notifications" class="notifications" aria-live="polite"></div>
+
+  <main class="card">
+    <h1>go-pkceflow demo</h1>
+    <p class="hint">Sign in with <strong>demo</strong> / <strong>demo</strong>.</p>
+
+    <div class="status">
+      <span id="statusDot" class="dot dot-unknown"></span>
+      <span id="statusText">Checking session…</span>
+    </div>
+
+    <div class="actions">
+      <button id="loginBtn" disabled>Log in</button>
+      <button id="logoutBtn" hidden>Log out</button>
+    </div>
+
+    <section id="claimsSection" hidden>
+      <h2>ID token claims</h2>
+      <dl id="claims"></dl>
+    </section>
+
+    <p class="foot">
+      The demo realm issues a <strong>3-minute</strong> access token, so the
+      background refresher cycles roughly every 90&nbsp;seconds &mdash; watch for
+      <code>token-refreshed</code> toasts.
+    </p>
+  </main>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

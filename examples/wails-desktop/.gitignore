@@ -1,0 +1,6 @@
+# Compiled binary from `go build`
+/wails-desktop
+
+# Wails build output
+/bin/
+/build/bin/
