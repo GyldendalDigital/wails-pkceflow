@@ -20,8 +20,20 @@ jobs:
         with:
           go-version: stable
 
-      - name: Run tests
+      # This is a cross-distro library: newer distros use the Wails v3 default
+      # gtk4/webkitgtk-6.0 backend, while Ubuntu <=24.04 and other gtk3-only
+      # environments build and run with -tags gtk3. Install both stacks and
+      # exercise both backends so neither regresses.
+      - name: Install Wails v3 Linux dependencies (gtk3 + gtk4)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: Test (gtk4, default)
         run: go test -race -coverprofile=coverage.out ./...
+
+      - name: Test (gtk3)
+        run: go test -race -tags gtk3 ./...
 
       - name: Upload coverage
         if: github.event_name == 'pull_request'
@@ -40,10 +52,18 @@ jobs:
         with:
           go-version: stable
 
-      - name: Build
+      - name: Install Wails v3 Linux dependencies (gtk3 + gtk4)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: Build (gtk4, default)
         run: go build ./...
 
-      - name: Verify go.mod is tidy
+      - name: Build (gtk3)
+        run: go build -tags gtk3 ./...
+
+      - name: Verify go.mod/go.sum are tidy
         run: |
           go mod tidy
-          git diff --exit-code go.mod
+          git diff --exit-code go.mod go.sum
