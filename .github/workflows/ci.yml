@@ -11,8 +11,20 @@ permissions:
 
 jobs:
   test:
-    name: Test
+    name: Test (${{ matrix.gtk }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Default Wails v3 backend (newer distros: Ubuntu 24.10+, Fedora, etc.)
+          - gtk: gtk4
+            tags: ""
+            pkgs: libgtk-4-dev libwebkitgtk-6.0-dev
+          # gtk3 build tag (Ubuntu <=24.04 and other gtk3-only environments)
+          - gtk: gtk3
+            tags: gtk3
+            pkgs: libgtk-3-dev libwebkit2gtk-4.1-dev
     steps:
       - uses: actions/checkout@v6
 
@@ -20,24 +32,34 @@ jobs:
         with:
           go-version: stable
 
-      - name: Install Wails v3 Linux dependencies (GTK4)
+      - name: Install Wails v3 Linux dependencies (${{ matrix.gtk }})
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
+          sudo apt-get install -y ${{ matrix.pkgs }}
 
       - name: Run tests
-        run: go test -race -coverprofile=coverage.out ./...
+        run: go test -race -tags "${{ matrix.tags }}" -coverprofile=coverage-${{ matrix.gtk }}.out ./...
 
       - name: Upload coverage
         if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v4
         with:
-          name: coverage
-          path: coverage.out
+          name: coverage-${{ matrix.gtk }}
+          path: coverage-${{ matrix.gtk }}.out
 
   build:
-    name: Build
+    name: Build (${{ matrix.gtk }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - gtk: gtk4
+            tags: ""
+            pkgs: libgtk-4-dev libwebkitgtk-6.0-dev
+          - gtk: gtk3
+            tags: gtk3
+            pkgs: libgtk-3-dev libwebkit2gtk-4.1-dev
     steps:
       - uses: actions/checkout@v6
 
@@ -45,15 +67,16 @@ jobs:
         with:
           go-version: stable
 
-      - name: Install Wails v3 Linux dependencies (GTK4)
+      - name: Install Wails v3 Linux dependencies (${{ matrix.gtk }})
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
+          sudo apt-get install -y ${{ matrix.pkgs }}
 
       - name: Build
-        run: go build ./...
+        run: go build -tags "${{ matrix.tags }}" ./...
 
-      - name: Verify go.mod is tidy
+      - name: Verify go.mod/go.sum are tidy
+        if: matrix.gtk == 'gtk4'
         run: |
           go mod tidy
-          git diff --exit-code go.mod
+          git diff --exit-code go.mod go.sum
