@@ -20,6 +20,11 @@ jobs:
         with:
           go-version: stable
 
+      - name: Install Wails v3 Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+
       - name: Run tests
         run: go test -race -coverprofile=coverage.out ./...
 
@@ -39,6 +44,11 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: stable
+
+      - name: Install Wails v3 Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
 
       - name: Build
         run: go build ./...
