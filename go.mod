@@ -1,9 +1,9 @@
 module github.com/GyldendalDigital/wails-pkceflow
 
-go 1.26
+go 1.25.0
 
 require (
-	github.com/GyldendalDigital/go-pkceflow v0.0.0-20260724163448-722763f2fc45
+	github.com/GyldendalDigital/go-pkceflow v0.9.0-beta.1
 	github.com/wailsapp/wails/v3 v3.0.0-alpha2.117
 )
 
