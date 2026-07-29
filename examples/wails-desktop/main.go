@@ -16,6 +16,7 @@ import (
 	"embed"
 	"io/fs"
 	"log"
+	"os"
 
 	pkceflow "github.com/GyldendalDigital/go-pkceflow"
 	"github.com/GyldendalDigital/go-pkceflow/desktopflow"
@@ -28,11 +29,13 @@ import (
 var assetsFS embed.FS
 
 // These values match the pre-baked demo realm in ./keycloak/demo-realm.json.
+// Override PKCEFLOW_ISSUER to point at a remote Keycloak (e.g., via VirtualBox
+// NAT: PKCEFLOW_ISSUER=http://10.0.2.2:8080/realms/demo).
 const (
-	issuerURL    = "http://localhost:8080/realms/demo"
-	clientID     = "demo-native"
-	callbackPort = 34115 // desktopflow listens on http://127.0.0.1:34115/callback
-	appID        = "go-pkceflow-demo"
+	defaultIssuerURL = "http://localhost:8080/realms/demo"
+	clientID         = "demo-native"
+	callbackPort     = 34115 // desktopflow listens on http://127.0.0.1:34115/callback
+	appID            = "go-pkceflow-demo"
 )
 
 // App is the bound Wails service the frontend calls. It delegates to the
@@ -66,6 +69,11 @@ func (a *App) Claims() (wailspkceflow.ClaimsDTO, wailspkceflow.AuthResult) { ret
 func (a *App) IsAuthenticated() bool { return a.auth.IsAuthenticated() }
 
 func main() {
+	issuer := defaultIssuerURL
+	if env := os.Getenv("PKCEFLOW_ISSUER"); env != "" {
+		issuer = env
+	}
+
 	// NewDefault hides the per-platform config-directory resolution.
 	store, err := filestore.NewDefault(appID)
 	if err != nil {
@@ -74,7 +82,7 @@ func main() {
 
 	authSvc, err := wailspkceflow.New(wailspkceflow.Options{
 		Config: pkceflow.Config{
-			IssuerURL: issuerURL,
+			IssuerURL: issuer,
 			ClientID:  clientID,
 		},
 		Flow:     desktopflow.New(callbackPort),
