@@ -67,3 +67,61 @@ jobs:
         run: |
           go mod tidy
           git diff --exit-code go.mod go.sum
+
+  # Cross-platform compilation ensures the wrapper (and the example app) build
+  # on every OS Wails v3 targets. Windows is CGo-free (WebView2); macOS needs
+  # Cocoa (pre-installed on GitHub macOS runners); Linux is covered above.
+  cross-build:
+    name: Cross-build (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: windows-amd64
+            runner: ubuntu-latest
+            goos: windows
+            goarch: amd64
+            cgo: "0"
+            tags: ""
+            install: ""
+          - target: macos-arm64
+            runner: macos-latest
+            goos: darwin
+            goarch: arm64
+            cgo: "1"
+            tags: ""
+            install: ""
+          - target: macos-amd64
+            runner: macos-latest
+            goos: darwin
+            goarch: amd64
+            cgo: "1"
+            tags: ""
+            install: ""
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+
+      - name: Install platform dependencies
+        if: matrix.install != ''
+        run: ${{ matrix.install }}
+
+      - name: Build wrapper module
+        env:
+          CGO_ENABLED: ${{ matrix.cgo }}
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: go build -tags "${{ matrix.tags }}" ./...
+
+      - name: Build example app
+        env:
+          CGO_ENABLED: ${{ matrix.cgo }}
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          GOPRIVATE: github.com/GyldendalDigital/*
+        working-directory: examples/wails-desktop
+        run: go build -tags "${{ matrix.tags }}" -o /dev/null .
