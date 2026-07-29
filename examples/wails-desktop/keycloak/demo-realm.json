@@ -33,7 +33,21 @@
       "attributes": {
         "pkce.code.challenge.method": "S256",
         "post.logout.redirect.uris": "http://127.0.0.1:34115/*##http://localhost:34115/*"
-      }
+      },
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "basic",
+        "email"
+      ],
+      "optionalClientScopes": [
+        "offline_access",
+        "address",
+        "phone",
+        "microprofile-jwt"
+      ]
     }
   ],
 
@@ -51,6 +65,9 @@
           "value": "demo",
           "temporary": false
         }
+      ],
+      "realmRoles": [
+        "offline_access"
       ]
     }
   ]
