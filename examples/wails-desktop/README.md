@@ -55,12 +55,39 @@ go run .
 Click **Log in**, authenticate as **demo** / **demo** in the browser, and the app
 returns to the signed-in state.
 
+This example is its own nested Go module. If a parent `go.work` contains only
+the core and wrapper modules, run with `GOWORK=off`:
+
+```bash
+GOWORK=off go run -tags gtk3 .
+```
+
+Override the issuer when Keycloak is reachable at another host:
+
+```bash
+GOWORK=off PKCEFLOW_ISSUER=http://10.0.2.2:8080/realms/demo go run .
+```
+
+From Windows PowerShell:
+
+```powershell
+$env:GOWORK = "off"
+$env:PKCEFLOW_ISSUER = "http://10.0.2.2:8080/realms/demo"
+go run .
+```
+
+`10.0.2.2` is the common VirtualBox NAT address for reaching the host from a
+Windows guest. Use the address appropriate to your VM or network. The callback
+still uses `127.0.0.1:34115` inside the guest, so the supplied realm's redirect
+registration remains unchanged.
+
 ## What to watch
 
 - A **"Logged in"** toast appears, and the status dot turns green.
 - The **ID token claims** (subject, name, email, issuer, expiry) render.
-- Every ~90 seconds a **"Token refreshed"** toast appears: the background loop
-  refreshes the 3-minute access token at roughly T/2 (DHCP-style timing).
+- Every ~90 seconds a **"Token refreshed"** toast appears: after its eager
+  startup refresh, the background loop refreshes the 3-minute token at roughly
+  half of its remaining lifetime.
 - **Log out** clears the session, runs RP-initiated logout, and shows a toast.
 - Stop Keycloak while signed in to see the discovery/refresh error toasts.
 

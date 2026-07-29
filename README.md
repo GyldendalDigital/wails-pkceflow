@@ -4,7 +4,10 @@ A [Wails v3](https://wails.io/) service wrapper for [go-pkceflow](https://github
 
 ## Status
 
-**Early development.** The API is not yet stable.
+**Pre-1.0 alpha.** The API may still change. A vanilla Keycloak run has covered
+login, token exchange, refresh, and logout on Linux, plus login, exchange, and
+refresh on Windows. Mobile, macOS, and Windows logout still need manual
+validation.
 
 ## Features
 
@@ -23,13 +26,17 @@ go get github.com/GyldendalDigital/wails-pkceflow
 
 ## Usage
 
-Create the service with `New`, register it with your Wails app, and keep the
-underlying client for your API calls:
+Create the auth facade with `New`, keep its core client for Go-side API calls,
+and bind a thin app-owned delegator to Wails. The delegator keeps the
+backend-only `Client()` accessor off the generated frontend surface:
 
 ```go
 package main
 
 import (
+	"context"
+	"log"
+
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	pkceflow "github.com/GyldendalDigital/go-pkceflow"
@@ -38,9 +45,54 @@ import (
 	wailspkceflow "github.com/GyldendalDigital/wails-pkceflow"
 )
 
+type App struct {
+	auth *wailspkceflow.AuthService
+}
+
+func (a *App) ServiceName() string {
+	return "Auth"
+}
+
+func (a *App) ServiceStartup(
+	ctx context.Context,
+	opts application.ServiceOptions,
+) error {
+	return a.auth.ServiceStartup(ctx, opts)
+}
+
+func (a *App) ServiceShutdown() error {
+	return a.auth.ServiceShutdown()
+}
+
+func (a *App) Login() wailspkceflow.AuthResult {
+	return a.auth.Login()
+}
+
+func (a *App) Logout() wailspkceflow.AuthResult {
+	return a.auth.Logout()
+}
+
+func (a *App) AuthStatus() pkceflow.AuthStatusResult {
+	return a.auth.AuthStatus()
+}
+
+func (a *App) IsAuthenticated() bool {
+	return a.auth.IsAuthenticated()
+}
+
+func (a *App) Claims() (
+	wailspkceflow.ClaimsDTO,
+	wailspkceflow.AuthResult,
+) {
+	return a.auth.Claims()
+}
+
 func main() {
 	handler := desktopflow.New(15051) // desktop: localhost callback
-	store, _ := filestore.New("com.example.myapp", configDir)
+	store, err := filestore.NewDefault("com.example.myapp")
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	authSvc, err := wailspkceflow.New(wailspkceflow.Options{
 		Config: pkceflow.Config{
@@ -52,30 +104,45 @@ func main() {
 		AutoInit: true, // run OIDC discovery in the background on startup
 	})
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
-	app := application.New(application.Options{Name: "My App"})
-	app.RegisterService(application.NewService(authSvc))
+	// Keep this in the Go API layer; do not expose it through App.
+	client := authSvc.Client()
+	_ = client // e.g. client.TokenFn(requestContext)
 
-	// Use the client for authenticated API calls:
-	//   tokenFn := authSvc.Client().TokenFn(ctx)
-	//   req.Header.Set("Authorization", "Bearer "+tokenFn())
-
-	app.NewWebviewWindow()
-	_ = app.Run()
+	app := application.New(application.Options{
+		Name: "My App",
+		Services: []application.Service{
+			application.NewService(&App{auth: authSvc}),
+		},
+	})
+	app.Window.NewWithOptions(application.WebviewWindowOptions{
+		Title:  "My App",
+		Width:  900,
+		Height: 700,
+	})
+	if err := app.Run(); err != nil {
+		log.Fatal(err)
+	}
 }
 ```
 
+The complete [desktop example](examples/wails-desktop) uses this pattern with a
+Dockerized Keycloak realm, event-driven notifications, and ID token claims.
+Registering `AuthService` itself is convenient but may expose its Go-only
+`Client()` method to Wails binding generation, so it is not the recommended
+application boundary.
+
 ### Frontend-bound methods
 
-The service exposes these methods to the frontend (via Wails bindings). Tokens
-are never returned to the frontend.
+Forward only the methods your frontend needs from the app-owned delegator.
+Tokens are never returned by these methods.
 
 | Method | Returns | Purpose |
 |--------|---------|---------|
 | `Login()` | `AuthResult` | Start the OIDC PKCE login flow |
-| `Logout()` | `AuthResult` | Clear the session (and RP-Initiated Logout when supported) |
+| `Logout()` | `AuthResult` | Clear in-memory state, attempt persistence deletion, and run RP-Initiated Logout when supported |
 | `AuthStatus()` | `pkceflow.AuthStatusResult` | Current auth state (no network) |
 | `IsAuthenticated()` | `bool` | Whether a usable session exists |
 | `Claims()` | `(ClaimsDTO, AuthResult)` | Decoded ID token claims |
@@ -101,9 +168,31 @@ On mobile, use `mobileflow.Handler` and pass it as `DeepLinkDelivery` so the
 wrapper routes the OS deep-link callback into the auth flow. Call `Pause()` when
 the app is backgrounded and `Resume()` when it returns to the foreground.
 
+Mobile callback filtering and emulator/device delivery remain pre-1.0
+hardening work. Do not route unrelated application URLs into the handler.
+
+### Running the example in a paired workspace
+
+`examples/wails-desktop` is a nested Go module. If a parent `go.work` includes
+only the two library modules, either add the example module to that workspace
+or run it with:
+
+```bash
+GOWORK=off go run .
+```
+
+PowerShell equivalent:
+
+```powershell
+$env:GOWORK = "off"
+go run .
+```
+
 ## Related
 
 - [go-pkceflow](https://github.com/GyldendalDigital/go-pkceflow) -- The core OIDC library (framework-agnostic)
+- [Core provider setup guides](https://github.com/GyldendalDigital/go-pkceflow#documentation)
+- [Desktop example](examples/wails-desktop)
 
 ## License
 
