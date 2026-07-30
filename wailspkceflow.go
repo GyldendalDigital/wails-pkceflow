@@ -305,9 +305,7 @@ func (s *AuthService) setLifecycleSubscription(runCtx context.Context, unsubscri
 
 	s.mu.Lock()
 	if s.lifecycleActive && s.runCtx == runCtx {
-		oldUnsubscribe := s.unsubscribeLaunchURL
-		s.unsubscribeLaunchURL = unsubscribe
-		unsubscribe = oldUnsubscribe
+		s.unsubscribeLaunchURL, unsubscribe = unsubscribe, s.unsubscribeLaunchURL
 	}
 	s.mu.Unlock()
 

@@ -12,7 +12,9 @@ import (
 
 type spyDeliverer struct{ urls []string }
 
-func (s *spyDeliverer) DeliverURL(url string) { s.urls = append(s.urls, url) }
+func (s *spyDeliverer) DeliverURL(callbackURL string) {
+	s.urls = append(s.urls, callbackURL)
+}
 
 type deliverableFlow struct {
 	spyDeliverer
