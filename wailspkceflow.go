@@ -13,10 +13,16 @@ import (
 
 // URLDeliverer receives a deep-link callback URL captured by the OS. It is
 // implemented by *mobileflow.Handler (its DeliverURL method). Provide one via
-// Options.DeepLinkDelivery to route mobile Universal Link / App Link callbacks
-// into the auth flow.
+// Options.Flow or Options.DeepLinkDelivery to route mobile Universal Link / App
+// Link callbacks into the auth flow. Implementations must be non-blocking and
+// safe for concurrent calls.
 type URLDeliverer interface {
 	DeliverURL(url string)
+}
+
+type refreshLoopController interface {
+	StartRefreshLoop(context.Context)
+	StopRefreshLoop()
 }
 
 // Options configures the AuthService facade. Config and Flow are required; the
@@ -44,7 +50,8 @@ type Options struct {
 	AutoInit bool
 
 	// DeepLinkDelivery, when set, routes the Wails ApplicationLaunchedWithUrl
-	// event to the given deliverer. Use on mobile with a mobileflow.Handler.
+	// event to the given deliverer. When nil, New uses Flow itself if it
+	// implements URLDeliverer. Set this only to explicitly override delivery.
 	DeepLinkDelivery URLDeliverer
 }
 
@@ -59,8 +66,16 @@ type AuthService struct {
 	autoInit bool
 	logger   *slog.Logger
 
-	mu     sync.Mutex      // guards runCtx
-	runCtx context.Context // captured in ServiceStartup for Pause/Resume
+	refresh   refreshLoopController
+	refreshMu sync.Mutex // serializes the core loop's separate stop/start steps
+
+	mu                   sync.Mutex
+	runCtx               context.Context
+	runCancel            context.CancelFunc
+	unsubscribeLaunchURL func()
+	lifecycleStarted     bool
+	lifecycleActive      bool
+	commandActive        bool
 }
 
 // New builds the underlying pkceflow.Client, wiring an internal deferred event
@@ -89,12 +104,18 @@ func New(opts Options) (*AuthService, error) {
 		logger = slog.Default()
 	}
 
+	deliver := opts.DeepLinkDelivery
+	if deliver == nil {
+		deliver, _ = opts.Flow.(URLDeliverer)
+	}
+
 	return &AuthService{
 		client:   client,
 		bus:      bus,
-		deliver:  opts.DeepLinkDelivery,
+		deliver:  deliver,
 		autoInit: opts.AutoInit,
 		logger:   logger,
+		refresh:  client,
 	}, nil
 }
 
@@ -114,28 +135,32 @@ func (s *AuthService) ServiceName() string {
 // background refresh loop, and (when configured) subscribes to deep-link launch
 // events and runs OIDC discovery.
 func (s *AuthService) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error {
+	runCtx := s.installLifecycle(ctx, nil)
+
 	app := application.Get()
 	s.bus.SetTarget(&appEmitter{app: app})
 
 	if s.deliver != nil {
-		app.Event.OnApplicationEvent(events.Common.ApplicationLaunchedWithUrl,
+		unsubscribe := app.Event.OnApplicationEvent(events.Common.ApplicationLaunchedWithUrl,
 			func(e *application.ApplicationEvent) {
 				s.handleLaunchURL(e.Context().URL())
 			})
+		s.setLifecycleSubscription(runCtx, unsubscribe)
 	}
 
 	s.client.RestoreSession()
+	s.refreshMu.Lock()
+	if s.isCurrentLifecycle(runCtx) {
+		s.refresh.StartRefreshLoop(runCtx)
+	}
+	s.refreshMu.Unlock()
 
-	s.mu.Lock()
-	s.runCtx = ctx
-	s.mu.Unlock()
-
-	s.client.StartRefreshLoop(ctx)
-
-	if s.autoInit {
+	if s.autoInit && s.isCurrentLifecycle(runCtx) {
 		go func() {
-			if err := s.client.Init(ctx); err != nil {
-				s.logger.Warn("pkceflow: background Init failed", "error", err)
+			if err := s.client.Init(runCtx); err != nil {
+				if runCtx.Err() == nil {
+					s.logger.Warn("pkceflow: background Init failed", "error", err)
+				}
 			}
 		}()
 	}
@@ -144,9 +169,11 @@ func (s *AuthService) ServiceStartup(ctx context.Context, _ application.ServiceO
 }
 
 // ServiceShutdown implements the Wails ServiceShutdown interface. It stops the
-// background refresh loop.
+// background refresh loop, cancels pending auth commands, and removes the
+// application launch-URL subscription.
 func (s *AuthService) ServiceShutdown() error {
-	s.client.StopRefreshLoop()
+	s.clearLifecycle()
+	s.stopRefreshLoop()
 	return nil
 }
 
@@ -154,7 +181,12 @@ func (s *AuthService) ServiceShutdown() error {
 // frontend and returns a structured AuthResult (never a raw error, never a
 // token). The login timeout comes from the client Config.
 func (s *AuthService) Login() AuthResult {
-	return newResult(s.client.Login(context.Background()))
+	ctx, rejected, ok := s.beginCommand()
+	if !ok {
+		return rejected
+	}
+	defer s.endCommand()
+	return newResult(s.client.Login(ctx))
 }
 
 // Logout clears in-memory state, attempts persistent deletion, and, when
@@ -163,7 +195,12 @@ func (s *AuthService) Login() AuthResult {
 // frontend-bound method returns a structured AuthResult, and the logout timeout
 // comes from the client Config.
 func (s *AuthService) Logout() AuthResult {
-	return newResult(s.client.Logout(context.Background()))
+	ctx, rejected, ok := s.beginCommand()
+	if !ok {
+		return rejected
+	}
+	defer s.endCommand()
+	return newResult(s.client.Logout(ctx))
 }
 
 // AuthStatus reports the current authentication state. It makes no network
@@ -192,19 +229,20 @@ func (s *AuthService) Claims() (ClaimsDTO, AuthResult) {
 // Pause stops the background token refresh loop. Call it when the app is
 // backgrounded (mobile) to avoid needless network activity and battery drain.
 func (s *AuthService) Pause() {
-	s.client.StopRefreshLoop()
+	s.stopRefreshLoop()
 }
 
 // Resume restarts the background token refresh loop after Pause. Call it when
 // the app returns to the foreground. The loop refreshes eagerly on start.
 func (s *AuthService) Resume() {
-	s.mu.Lock()
-	ctx := s.runCtx
-	s.mu.Unlock()
-	if ctx == nil {
-		ctx = context.Background()
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
+
+	ctx, ok := s.serviceContext()
+	if !ok {
+		return
 	}
-	s.client.StartRefreshLoop(ctx)
+	s.refresh.StartRefreshLoop(ctx)
 }
 
 // handleLaunchURL routes a deep-link callback URL to the configured deliverer.
@@ -214,4 +252,122 @@ func (s *AuthService) handleLaunchURL(url string) {
 	if s.deliver != nil {
 		s.deliver.DeliverURL(url)
 	}
+}
+
+func (s *AuthService) installLifecycle(parent context.Context, unsubscribe func()) context.Context {
+	if parent == nil {
+		parent = context.Background()
+	}
+	runCtx, cancel := context.WithCancel(parent)
+
+	s.mu.Lock()
+	oldCancel := s.runCancel
+	oldUnsubscribe := s.unsubscribeLaunchURL
+	s.runCtx = runCtx
+	s.runCancel = cancel
+	s.unsubscribeLaunchURL = unsubscribe
+	s.lifecycleStarted = true
+	s.lifecycleActive = true
+	s.mu.Unlock()
+
+	if oldCancel != nil {
+		oldCancel()
+	}
+	if oldUnsubscribe != nil {
+		oldUnsubscribe()
+	}
+	return runCtx
+}
+
+func (s *AuthService) clearLifecycle() {
+	s.mu.Lock()
+	cancel := s.runCancel
+	unsubscribe := s.unsubscribeLaunchURL
+	s.runCtx = nil
+	s.runCancel = nil
+	s.unsubscribeLaunchURL = nil
+	s.lifecycleStarted = true
+	s.lifecycleActive = false
+	s.mu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
+	if unsubscribe != nil {
+		unsubscribe()
+	}
+}
+
+func (s *AuthService) setLifecycleSubscription(runCtx context.Context, unsubscribe func()) {
+	if unsubscribe == nil {
+		return
+	}
+
+	s.mu.Lock()
+	if s.lifecycleActive && s.runCtx == runCtx {
+		oldUnsubscribe := s.unsubscribeLaunchURL
+		s.unsubscribeLaunchURL = unsubscribe
+		unsubscribe = oldUnsubscribe
+	}
+	s.mu.Unlock()
+
+	if unsubscribe != nil {
+		unsubscribe()
+	}
+}
+
+func (s *AuthService) isCurrentLifecycle(runCtx context.Context) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lifecycleActive && s.runCtx == runCtx
+}
+
+func (s *AuthService) serviceContext() (context.Context, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.lifecycleStarted && !s.lifecycleActive {
+		return nil, false
+	}
+	ctx := s.runCtx
+	if ctx != nil && ctx.Err() != nil {
+		return nil, false
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return ctx, true
+}
+
+func (s *AuthService) stopRefreshLoop() {
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
+	s.refresh.StopRefreshLoop()
+}
+
+func (s *AuthService) beginCommand() (context.Context, AuthResult, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.commandActive {
+		return nil, flowInProgressResult(), false
+	}
+	if s.lifecycleStarted && !s.lifecycleActive {
+		return nil, serviceStoppedResult(), false
+	}
+	ctx := s.runCtx
+	if ctx != nil && ctx.Err() != nil {
+		return nil, serviceStoppedResult(), false
+	}
+	s.commandActive = true
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return ctx, AuthResult{}, true
+}
+
+func (s *AuthService) endCommand() {
+	s.mu.Lock()
+	s.commandActive = false
+	s.mu.Unlock()
 }

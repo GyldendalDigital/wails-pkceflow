@@ -1,11 +1,13 @@
 package wailspkceflow
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
 
 	pkceflow "github.com/GyldendalDigital/go-pkceflow"
+	"github.com/GyldendalDigital/go-pkceflow/mobileflow"
 )
 
 func TestNewResult(t *testing.T) {
@@ -18,6 +20,9 @@ func TestNewResult(t *testing.T) {
 		{"success", nil, true, ""},
 		{"cancelled", pkceflow.ErrFlowCancelled, false, CodeCancelled},
 		{"wrapped cancelled", fmt.Errorf("x: %w", pkceflow.ErrFlowCancelled), false, CodeCancelled},
+		{"context cancelled", context.Canceled, false, CodeCancelled},
+		{"context deadline", context.DeadlineExceeded, false, CodeCancelled},
+		{"flow in progress", mobileflow.ErrFlowInProgress, false, CodeFlowInProgress},
 		{"not initialized", pkceflow.ErrNotInitialized, false, CodeNotInitialized},
 		{"not authenticated", pkceflow.ErrNotAuthenticated, false, CodeNotAuthenticated},
 		{"permanent auth error", &pkceflow.AuthError{Code: "invalid_grant"}, false, CodeSessionExpired},
