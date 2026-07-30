@@ -48,8 +48,10 @@ type Options struct {
 	DeepLinkDelivery URLDeliverer
 }
 
-// AuthService adapts a pkceflow.Client to a Wails v3 service. Construct it with
-// New and register it with app.RegisterService(application.NewService(authSvc)).
+// AuthService adapts a pkceflow.Client to Wails v3. Construct it with New and
+// keep Client for Go-side API calls. Applications should normally bind a thin
+// delegator that forwards only frontend-safe methods, leaving Client off the
+// generated binding surface. See the package README and desktop example.
 type AuthService struct {
 	client   *pkceflow.Client
 	bus      *eventbus.DeferredEventBus
@@ -155,9 +157,11 @@ func (s *AuthService) Login() AuthResult {
 	return newResult(s.client.Login(context.Background()))
 }
 
-// Logout clears the local session and, when supported, performs RP-Initiated
-// Logout. It is bound to the frontend and returns a structured AuthResult. The
-// logout timeout comes from the client Config.
+// Logout clears in-memory state, attempts persistent deletion, and, when
+// supported, performs RP-Initiated Logout. Persistence and browser logout
+// failures are logged by the core client rather than returned. This
+// frontend-bound method returns a structured AuthResult, and the logout timeout
+// comes from the client Config.
 func (s *AuthService) Logout() AuthResult {
 	return newResult(s.client.Logout(context.Background()))
 }

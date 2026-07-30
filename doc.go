@@ -9,21 +9,29 @@
 // Usage:
 //
 //	handler := desktopflow.New(15051) // or mobileflow.New(uri, openURL)
-//	store, _ := filestore.New("com.example.myapp", configDir)
+//	store, err := filestore.NewDefault("com.example.myapp")
+//	if err != nil {
+//	    return err
+//	}
 //
-//	authSvc, _ := wailspkceflow.New(wailspkceflow.Options{
+//	authSvc, err := wailspkceflow.New(wailspkceflow.Options{
 //	    Config:   pkceflow.Config{IssuerURL: "https://idp.example.com", ClientID: "my-app"},
 //	    Flow:     handler,
 //	    Store:    store,
 //	    AutoInit: true,
 //	})
-//
-//	app := application.New(application.Options{Name: "My App"})
-//	app.RegisterService(application.NewService(authSvc))
+//	if err != nil {
+//	    return err
+//	}
 //
 //	client := authSvc.Client() // client.TokenFn(ctx) for the app's API calls
 //
-// The frontend calls the bound methods Login, Logout, AuthStatus, Claims, and
-// IsAuthenticated. Access, ID, and refresh tokens are never exposed to the
-// frontend; the Go backend performs authenticated requests via the client.
+//	// Bind an app-owned delegator that forwards only frontend-safe methods.
+//	app := application.New(application.Options{Name: "My App"})
+//	app.RegisterService(application.NewService(&App{auth: authSvc}))
+//
+// App is a thin service owned by the application. It delegates Login, Logout,
+// AuthStatus, Claims, IsAuthenticated, and lifecycle methods to authSvc without
+// exposing Client(). See the repository README and desktop example for the
+// complete type. Access, ID, and refresh tokens stay in the Go backend.
 package wailspkceflow

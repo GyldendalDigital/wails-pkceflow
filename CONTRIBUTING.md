@@ -35,7 +35,7 @@ chore: bump go-pkceflow dependency
 
 ## Development Requirements
 
-- Go 1.26 or later
+- Go 1.25 or later
 - Wails v3 CLI (for building example apps)
 
 ## Running Tests
@@ -63,6 +63,12 @@ If you discover a security vulnerability, please report it privately via GitHub'
 3. Update documentation if your change affects the public API
 4. Fill out the PR template completely
 5. One logical change per PR
+
+When wrapper behavior changes, check the README, package `doc.go`, and desktop
+example together. Also verify whether the core README, architecture, or
+provider guides need a corresponding update. Examples should bind an app-owned
+delegator so backend-only methods such as `Client()` stay off the frontend
+surface.
 
 ## License
 
