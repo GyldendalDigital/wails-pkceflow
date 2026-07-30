@@ -1,9 +1,11 @@
 package wailspkceflow
 
 import (
+	"context"
 	"errors"
 
 	pkceflow "github.com/GyldendalDigital/go-pkceflow"
+	"github.com/GyldendalDigital/go-pkceflow/mobileflow"
 )
 
 // AuthResult is the structured outcome returned by the bound action methods
@@ -19,8 +21,9 @@ type AuthResult struct {
 	OK bool `json:"ok"`
 
 	// Code is a stable machine-readable outcome code. Empty when OK is true.
-	// Known values: "cancelled", "not_initialized", "session_expired",
-	// an OAuth2 error code (for example "invalid_grant"), or "error".
+	// Known values: "cancelled", "flow_in_progress", "not_initialized",
+	// "not_authenticated", "session_expired", an OAuth2 error code (for
+	// example "invalid_grant"), or "error".
 	Code string `json:"code,omitempty"`
 
 	// Message is a non-localized diagnostic detail. Never contains tokens.
@@ -31,6 +34,9 @@ type AuthResult struct {
 const (
 	// CodeCancelled indicates the user or context cancelled the flow.
 	CodeCancelled = "cancelled"
+	// CodeFlowInProgress indicates another frontend login or logout command is
+	// still active.
+	CodeFlowInProgress = "flow_in_progress"
 	// CodeNotInitialized indicates a method was called before Init succeeded.
 	CodeNotInitialized = "not_initialized"
 	// CodeNotAuthenticated indicates there is no active session (for example
@@ -52,8 +58,12 @@ func newResult(err error) AuthResult {
 	}
 
 	switch {
-	case errors.Is(err, pkceflow.ErrFlowCancelled):
+	case errors.Is(err, pkceflow.ErrFlowCancelled),
+		errors.Is(err, context.Canceled),
+		errors.Is(err, context.DeadlineExceeded):
 		return AuthResult{Code: CodeCancelled, Message: err.Error()}
+	case errors.Is(err, mobileflow.ErrFlowInProgress):
+		return AuthResult{Code: CodeFlowInProgress, Message: err.Error()}
 	case errors.Is(err, pkceflow.ErrNotInitialized):
 		return AuthResult{Code: CodeNotInitialized, Message: err.Error()}
 	case errors.Is(err, pkceflow.ErrNotAuthenticated):
@@ -68,4 +78,18 @@ func newResult(err error) AuthResult {
 	}
 
 	return AuthResult{Code: CodeError, Message: err.Error()}
+}
+
+func flowInProgressResult() AuthResult {
+	return AuthResult{
+		Code:    CodeFlowInProgress,
+		Message: "another authentication operation is already in progress",
+	}
+}
+
+func serviceStoppedResult() AuthResult {
+	return AuthResult{
+		Code:    CodeCancelled,
+		Message: "authentication service is not running",
+	}
 }

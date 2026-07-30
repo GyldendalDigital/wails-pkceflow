@@ -148,8 +148,10 @@ Tokens are never returned by these methods.
 | `Claims()` | `(ClaimsDTO, AuthResult)` | Decoded ID token claims |
 
 `AuthResult` carries a stable `code` (`""` on success, or `cancelled`,
-`not_initialized`, `not_authenticated`, `session_expired`, an OAuth2 error code,
-or `error`) so the frontend can branch without string matching.
+`flow_in_progress`, `not_initialized`, `not_authenticated`, `session_expired`,
+an OAuth2 error code, or `error`) so the frontend can branch without string
+matching. `flow_in_progress` means another frontend login or logout command is
+still active.
 
 ### Auth events
 
@@ -164,12 +166,37 @@ them in the frontend or in Go:
 
 ### Mobile
 
-On mobile, use `mobileflow.Handler` and pass it as `DeepLinkDelivery` so the
-wrapper routes the OS deep-link callback into the auth flow. Call `Pause()` when
-the app is backgrounded and `Resume()` when it returns to the foreground.
+On mobile, pass a `mobileflow.Handler` as `Flow`. Because the handler also
+implements `URLDeliverer`, the wrapper automatically routes Wails
+`ApplicationLaunchedWithUrl` events to it:
 
-Mobile callback filtering and emulator/device delivery remain pre-1.0
-hardening work. Do not route unrelated application URLs into the handler.
+```go
+handler := mobileflow.New(
+	"https://app.example.com/auth/callback",
+	openURL,
+)
+authSvc, err := wailspkceflow.New(wailspkceflow.Options{
+	Config: pkceflow.Config{
+		IssuerURL: "https://login.example.com",
+		ClientID:  "my-mobile-app",
+	},
+	Flow: handler,
+})
+```
+
+`DeepLinkDelivery` remains available as an explicit override when delivery must
+go somewhere other than `Flow`. The wrapper forwards every launch URL unchanged
+and never parses or logs it; hardened callback URI and state correlation belongs
+to core `mobileflow`, which safely ignores unrelated links.
+
+Call `Pause()` when the app is backgrounded and `Resume()` when it returns to
+the foreground. Service shutdown cancels a pending login/logout and removes the
+Wails launch-URL subscription.
+
+The complete OS-to-Wails delivery path still requires emulator/device
+validation under [issue #8](https://github.com/GyldendalDigital/wails-pkceflow/issues/8).
+Do not claim mobile-ready support until that check passes for the pinned Wails
+version.
 
 ### Running the example in a paired workspace
 
