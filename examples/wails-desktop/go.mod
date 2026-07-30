@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/GyldendalDigital/go-pkceflow v0.9.0-beta.4
-	github.com/GyldendalDigital/wails-pkceflow v0.9.0-alpha.1
+	github.com/GyldendalDigital/wails-pkceflow v0.9.0-alpha.2
 	github.com/wailsapp/wails/v3 v3.0.0-alpha2.117
 )
 

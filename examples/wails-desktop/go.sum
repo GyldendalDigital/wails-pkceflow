@@ -1,7 +1,7 @@
 github.com/GyldendalDigital/go-pkceflow v0.9.0-beta.4 h1:HZbYKX5eIEpWtUXB+D1np5J1MDWMm9pw59/2WgCkZMM=
 github.com/GyldendalDigital/go-pkceflow v0.9.0-beta.4/go.mod h1:l6l1yt2gLRtBEsuuFxE7FOck9zuSQQ8bMF9VYUicFyI=
-github.com/GyldendalDigital/wails-pkceflow v0.9.0-alpha.1 h1:MZ8qSxyqWGb3YPt0GElvPrvPi35IPrld6GQ18MHwUr0=
-github.com/GyldendalDigital/wails-pkceflow v0.9.0-alpha.1/go.mod h1:JWzr4i3nRRuQXsZbssMBeaVQoHdzAjn26dXc5IJ6GsI=
+github.com/GyldendalDigital/wails-pkceflow v0.9.0-alpha.2 h1:iAkxOYSNnhng1fsaKmwIfhafQ3QAwkP0WpNcxjeD1SY=
+github.com/GyldendalDigital/wails-pkceflow v0.9.0-alpha.2/go.mod h1:wkKd53Yf3PC3DL2ABwwTsbOTjwmJYv/XEC4Vl2iKW/Y=
 github.com/adrg/xdg v0.5.3 h1:xRnxJXne7+oWDatRhR1JLnvuccuIeCoBu2rtuLqQB78=
 github.com/adrg/xdg v0.5.3/go.mod h1:nlTsY+NNiCBGCK2tpm09vRqfVzrc2fLmXGpBLF0zlTQ=
 github.com/coder/websocket v1.8.14 h1:9L0p0iKiNOibykf283eHkKUHHrpG7f65OE3BhhO7v9g=
