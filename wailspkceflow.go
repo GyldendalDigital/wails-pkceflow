@@ -233,7 +233,9 @@ func (s *AuthService) Pause() {
 }
 
 // Resume restarts the background token refresh loop after Pause. Call it when
-// the app returns to the foreground. The loop refreshes eagerly on start.
+// the app returns to the foreground. The loop continues the current session's
+// refresh schedule instead of forcing a refresh; an already-due threshold may
+// still run immediately.
 func (s *AuthService) Resume() {
 	s.refreshMu.Lock()
 	defer s.refreshMu.Unlock()
