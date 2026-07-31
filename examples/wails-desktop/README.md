@@ -85,11 +85,12 @@ registration remains unchanged.
 
 - A **"Logged in"** toast appears, and the status dot turns green.
 - The **ID token claims** (subject, name, email, issuer, expiry) render.
-- Every ~90 seconds a **"Token refreshed"** toast appears: after its eager
-  startup refresh, the background loop refreshes the 3-minute token at roughly
-  half of its remaining lifetime.
+- About 90 seconds after login, a **"Token refreshed"** toast appears. The
+  background loop schedules each 3-minute token from its session timestamps
+  and refreshes at the lifetime midpoint.
 - **Log out** clears the session, runs RP-initiated logout, and shows a toast.
-- Stop Keycloak while signed in to see the discovery/refresh error toasts.
+- Start the app while Keycloak is unavailable to see the initialization-failed
+  toast.
 
 ## The pre-baked values
 
