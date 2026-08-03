@@ -3,9 +3,9 @@ module github.com/GyldendalDigital/wails-pkceflow/examples/wails-desktop
 go 1.25.0
 
 require (
-	github.com/GyldendalDigital/go-pkceflow v0.9.0-beta.5
+	github.com/GyldendalDigital/go-pkceflow v0.9.0-beta.6
 	github.com/GyldendalDigital/wails-pkceflow v0.9.0-alpha.3
-	github.com/wailsapp/wails/v3 v3.0.0-alpha2.117
+	github.com/wailsapp/wails/v3 v3.0.0-beta.2
 )
 
 require (
@@ -19,5 +19,5 @@ require (
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
-	golang.org/x/sys v0.43.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
 )

@@ -20,10 +20,9 @@ jobs:
         with:
           go-version: stable
 
-      # This is a cross-distro library: newer distros use the Wails v3 default
-      # gtk4/webkitgtk-6.0 backend, while Ubuntu <=24.04 and other gtk3-only
-      # environments build and run with -tags gtk3. Install both stacks and
-      # exercise both backends so neither regresses.
+      # Wails v3 defaults to gtk4/webkitgtk-6.0, while gtk3-only environments
+      # can use the legacy backend throughout Wails v3.0.x with -tags gtk3.
+      # Install both stacks and exercise both backends so neither regresses.
       - name: Install Wails v3 Linux dependencies (gtk3 + gtk4)
         run: |
           sudo apt-get update
@@ -62,6 +61,20 @@ jobs:
 
       - name: Build (gtk3)
         run: go build -tags gtk3 ./...
+
+      - name: Verify example go.mod/go.sum are tidy
+        working-directory: examples/wails-desktop
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+
+      - name: Build example against local wrapper (gtk4 + gtk3)
+        working-directory: examples/wails-desktop
+        run: |
+          go mod edit -replace=github.com/GyldendalDigital/wails-pkceflow=../..
+          go build -mod=readonly -o /dev/null .
+          go build -mod=readonly -tags gtk3 -o /dev/null .
+          git diff --exit-code go.sum
 
       - name: Verify go.mod/go.sum are tidy
         run: |
@@ -124,4 +137,7 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           GOPRIVATE: github.com/GyldendalDigital/*
         working-directory: examples/wails-desktop
-        run: go build -tags "${{ matrix.tags }}" -o /dev/null .
+        run: |
+          go mod edit -replace=github.com/GyldendalDigital/wails-pkceflow=../..
+          go build -mod=readonly -tags "${{ matrix.tags }}" -o /dev/null .
+          git diff --exit-code go.sum

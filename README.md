@@ -4,10 +4,10 @@ A [Wails v3](https://wails.io/) service wrapper for [go-pkceflow](https://github
 
 ## Status
 
-**Pre-1.0 alpha.** The API may still change. A vanilla Keycloak run has covered
-login, token exchange, refresh, and logout on Linux, plus login, exchange, and
-refresh on Windows. Mobile, macOS, and Windows logout still need manual
-validation.
+**Pre-1.0 alpha wrapper, tested with Wails v3.0.0-beta.2.** The wrapper API may
+still change. A vanilla Keycloak run has covered login, token exchange, refresh,
+and logout on Linux, plus login, exchange, and refresh on Windows. Mobile,
+macOS, and Windows logout still need manual validation.
 
 ## Features
 
@@ -195,8 +195,11 @@ Wails launch-URL subscription.
 
 The complete OS-to-Wails delivery path still requires emulator/device
 validation under [issue #8](https://github.com/GyldendalDigital/wails-pkceflow/issues/8).
-Do not claim mobile-ready support until that check passes for the pinned Wails
-version.
+Wails beta.2 does not yet include the proposed mobile deep-link delivery and
+Android warm-start changes ([wailsapp/wails#5808](https://github.com/wailsapp/wails/pull/5808),
+[wailsapp/wails#5727](https://github.com/wailsapp/wails/pull/5727)). Do not claim
+mobile-ready support until the host path exists in the pinned Wails version and
+the device check passes.
 
 ### Running the example in a paired workspace
 
