@@ -190,10 +190,11 @@ func (s *AuthService) Login() AuthResult {
 }
 
 // Logout clears in-memory state, attempts persistent deletion, and, when
-// supported, performs RP-Initiated Logout. Persistence and browser logout
-// failures are logged by the core client rather than returned. This
-// frontend-bound method returns a structured AuthResult, and the logout timeout
-// comes from the client Config.
+// supported, performs RP-Initiated Logout. Persistence failures and
+// non-cancellation browser logout failures are logged by the core client rather
+// than returned; cancellation of the best-effort browser round trip is silent.
+// This frontend-bound method returns a structured AuthResult, and the logout
+// timeout comes from the client Config.
 func (s *AuthService) Logout() AuthResult {
 	ctx, rejected, ok := s.beginCommand()
 	if !ok {

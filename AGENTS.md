@@ -51,8 +51,10 @@ then adapt the wrapper only as needed.
 ## Wails Integration Rules
 
 - Keep the wrapper aligned with Wails v3 APIs used by the repository.
-- Treat Wails v3 alpha behavior as potentially unstable. Verify against the
-  pinned version before making API assumptions.
+- Treat Wails v3 beta as pre-release. Beta.2 declares the desktop API stable,
+  but verify against the pinned version before making API assumptions.
+- Keep mobile support conservative: Wails host-level deep-link delivery remains
+  experimental and must be proven on an emulator or device.
 - Do not add application-specific behavior to the wrapper.
 - Keep lifecycle methods predictable:
   - startup wires events, restores session, starts refresh loop, and optionally

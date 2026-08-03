@@ -26,9 +26,10 @@ examples/wails-desktop/
 
 - Docker + Docker Compose
 - Go 1.25+
-- Wails v3 Linux build deps (on Ubuntu 24.04): `libgtk-3-dev libwebkit2gtk-4.1-dev`
-  and run with `-tags gtk3` (newer distros use the default gtk4 backend with
-  `libgtk-4-dev libwebkitgtk-6.0-dev`).
+- Wails v3 default Linux build deps on Debian/Ubuntu (including Ubuntu 24.04):
+  `build-essential`, `pkg-config`, `libgtk-4-dev`, and `libwebkitgtk-6.0-dev`.
+  The legacy GTK3 path remains available through Wails v3.0.x for older
+  distributions with `libgtk-3-dev`, `libwebkit2gtk-4.1-dev`, and `-tags gtk3`.
 
 ## 1. Start Keycloak
 
@@ -46,10 +47,10 @@ Admin console (optional): http://localhost:8080 with `admin` / `admin`.
 From this directory:
 
 ```bash
-# Ubuntu <= 24.04 (gtk3):
-go run -tags gtk3 .
-# newer distros (gtk4 default):
+# GTK4 / WebKitGTK 6.0 (default):
 go run .
+# Legacy GTK3 / WebKit2GTK 4.1 fallback:
+go run -tags gtk3 .
 ```
 
 Click **Log in**, authenticate as **demo** / **demo** in the browser, and the app
@@ -59,7 +60,7 @@ This example is its own nested Go module. If a parent `go.work` contains only
 the core and wrapper modules, run with `GOWORK=off`:
 
 ```bash
-GOWORK=off go run -tags gtk3 .
+GOWORK=off go run .
 ```
 
 Override the issuer when Keycloak is reachable at another host:
