@@ -23,7 +23,8 @@ It owns:
 - Wails service lifecycle integration.
 - Deferred event bridge from core `oidcauth:*` events to Wails app events.
 - Frontend-safe results and DTOs.
-- Deep-link delivery wiring from Wails launch URL events to core `mobileflow`.
+- Subscription and forwarding from Wails launch URL events to core
+  `mobileflow`. Native Android/iOS event production is owned by Wails.
 - Wails example app and wrapper-specific documentation.
 
 It must not own:
@@ -53,8 +54,12 @@ then adapt the wrapper only as needed.
 - Keep the wrapper aligned with Wails v3 APIs used by the repository.
 - Treat Wails v3 beta as pre-release. Beta.2 declares the desktop API stable,
   but verify against the pinned version before making API assumptions.
-- Keep mobile support conservative: Wails host-level deep-link delivery remains
-  experimental and must be proven on an emulator or device.
+- Keep mobile support conservative: the wrapper adapter is implemented and
+  unit-tested, but Wails v3.0.0-beta.2 does not produce the required mobile
+  launch-URL events. Wrapper issue #8 validates that Wails-specific host path;
+  it does not block core or desktop dogfooding and must not drive core changes.
+- Do not implement upstream Wails changes, pin an unreleased Wails fork, or
+  start emulator work for issue #8 without an explicit maintainer request.
 - Do not add application-specific behavior to the wrapper.
 - Keep lifecycle methods predictable:
   - startup wires events, restores session, starts refresh loop, and optionally

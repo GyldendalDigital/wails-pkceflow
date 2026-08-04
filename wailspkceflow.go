@@ -11,11 +11,11 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/events"
 )
 
-// URLDeliverer receives a deep-link callback URL captured by the OS. It is
-// implemented by *mobileflow.Handler (its DeliverURL method). Provide one via
-// Options.Flow or Options.DeepLinkDelivery to route mobile Universal Link / App
-// Link callbacks into the auth flow. Implementations must be non-blocking and
-// safe for concurrent calls.
+// URLDeliverer receives a URL already surfaced by the Wails host. AuthService
+// forwards ApplicationLaunchedWithUrl events; it does not capture native
+// Android or iOS callbacks. The interface is implemented by *mobileflow.Handler
+// through its DeliverURL method. Implementations must be non-blocking and safe
+// for concurrent calls.
 type URLDeliverer interface {
 	DeliverURL(url string)
 }

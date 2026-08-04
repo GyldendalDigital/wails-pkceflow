@@ -49,7 +49,12 @@ go test ./...
 - This is a thin integration layer between go-pkceflow and Wails v3
 - No OIDC/OAuth logic that belongs in the core library
 - No application-specific logic that belongs in the end developer's Wails app
-- The scope is strictly: service lifecycle, event bridging, and deep link routing
+- Wrapper scope includes service lifecycle, event bridging, and forwarding
+  Wails launch-URL events into core. Android intent handling, iOS delegate
+  handling, cold-launch capture/buffering, and native templates belong upstream
+  Wails. URI/state correlation and any persisted transaction-recovery semantics
+  belong in core; restart user experience and link registration belong in the
+  application.
 - Follow the same conventions as go-pkceflow (see [go-pkceflow CONTRIBUTING](https://github.com/GyldendalDigital/go-pkceflow/blob/master/CONTRIBUTING.md))
 
 ## Security
