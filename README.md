@@ -1,20 +1,28 @@
 # wails-pkceflow
 
-A [Wails v3](https://wails.io/) service wrapper for [go-pkceflow](https://github.com/GyldendalDigital/go-pkceflow). Provides OIDC PKCE authentication as a Wails service with lifecycle management, event bridging, and deep link routing for desktop and mobile apps.
+A [Wails v3](https://wails.io/) service wrapper for
+[go-pkceflow](https://github.com/GyldendalDigital/go-pkceflow). It provides
+OIDC PKCE authentication as a Wails service with lifecycle management, event
+bridging, and an adapter from Wails launch-URL events to the core mobile
+callback handler.
 
 ## Status
 
 **Pre-1.0 alpha wrapper, tested with Wails v3.0.0-beta.2.** The wrapper API may
 still change. A vanilla Keycloak run has covered login, token exchange, refresh,
-and logout on Linux, plus login, exchange, and refresh on Windows. Mobile,
-macOS, and Windows logout still need manual validation.
+and logout on Linux, plus login, exchange, and refresh on Windows. macOS and
+Windows logout still need manual validation. The wrapper's mobile adapter is
+unit-tested, but Wails beta.2 does not produce the required launch-URL events on
+Android or iOS, so end-to-end Wails mobile support is not available on the
+pinned release. This does not limit core `mobileflow` or Wails desktop use.
 
 ## Features
 
 - Wails v3 service adapter with `ServiceStartup` / `ServiceShutdown` lifecycle
 - Automatic session restore, optional background OIDC discovery, and background token refresh
 - Event bridge from go-pkceflow auth events (`oidcauth:*`) to Wails application events
-- Deep link routing: connects the Wails `ApplicationLaunchedWithUrl` event to go-pkceflow's mobile flow handler
+- Mobile event adapter: forwards `ApplicationLaunchedWithUrl` events when the
+  Wails host supplies them; beta.2 does not yet do so on Android or iOS
 - Structured, frontend-friendly results (no tokens ever cross to the frontend)
 - `Pause` / `Resume` for mobile background/foreground refresh control
 
@@ -184,6 +192,13 @@ authSvc, err := wailspkceflow.New(wailspkceflow.Options{
 })
 ```
 
+The application configures its Android intent filters or iOS URL
+types/associated domains and supplies the external-browser opener. On a Wails
+release with mobile host delivery, Wails turns native callbacks into
+`ApplicationLaunchedWithUrl`; this wrapper forwards that event unchanged; core
+`mobileflow` validates and correlates it. The pinned Wails release does not yet
+provide that native event path.
+
 `DeepLinkDelivery` remains available as an explicit override when delivery must
 go somewhere other than `Flow`. The wrapper forwards every launch URL unchanged
 and never parses or logs it; hardened callback URI and state correlation belongs
@@ -193,13 +208,22 @@ Call `Pause()` when the app is backgrounded and `Resume()` when it returns to
 the foreground. Service shutdown cancels a pending login/logout and removes the
 Wails launch-URL subscription.
 
-The complete OS-to-Wails delivery path still requires emulator/device
-validation under [issue #8](https://github.com/GyldendalDigital/wails-pkceflow/issues/8).
-Wails beta.2 does not yet include the proposed mobile deep-link delivery and
-Android warm-start changes ([wailsapp/wails#5808](https://github.com/wailsapp/wails/pull/5808),
-[wailsapp/wails#5727](https://github.com/wailsapp/wails/pull/5727)). Do not claim
-mobile-ready support until the host path exists in the pinned Wails version and
-the device check passes.
+The active core flow exists only in process memory. A cold-launch URL can prove
+that the host delivered an event, but it cannot resume a login or logout whose
+process was killed; the application must start that flow again.
+
+The wrapper subscription and forwarding behavior is implemented and
+unit-tested, and core `mobileflow` validates callbacks once delivered. The
+missing step is native OS-to-Wails event production: Wails beta.2 does not yet
+include the proposed mobile deep-link delivery and Android warm-start changes
+([wailsapp/wails#5808](https://github.com/wailsapp/wails/pull/5808),
+[wailsapp/wails#5727](https://github.com/wailsapp/wails/pull/5727)).
+
+[Issue #8](https://github.com/GyldendalDigital/wails-pkceflow/issues/8) tracks
+only that Wails mobile host integration and its emulator/device acceptance
+test. It does not block go-pkceflow or Wails desktop dogfooding. Do not claim
+turnkey Wails mobile support until the host path exists in an official pinned
+Wails release and the device check passes.
 
 ### Running the example in a paired workspace
 

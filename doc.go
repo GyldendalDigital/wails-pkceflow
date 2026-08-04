@@ -4,9 +4,10 @@
 // It provides a single facade, AuthService, that owns a *pkceflow.Client, bridges
 // the client's auth lifecycle events to Wails application events, manages the
 // background token refresh loop across the Wails service lifecycle, and (on
-// mobile) routes deep-link callbacks into the client's flow handler. When Flow
-// implements URLDeliverer, as mobileflow.Handler does, New wires delivery
-// automatically.
+// mobile) subscribes to Wails launch-URL events and forwards them into the
+// client's flow handler. Native Android/iOS event production remains the Wails
+// host's responsibility. When Flow implements URLDeliverer, as
+// mobileflow.Handler does, New wires event forwarding automatically.
 //
 // Usage:
 //
