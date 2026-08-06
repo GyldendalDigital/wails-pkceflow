@@ -12,7 +12,6 @@
 package main
 
 import (
-	"context"
 	"embed"
 	"io/fs"
 	"log"
@@ -37,36 +36,6 @@ const (
 	callbackPort     = 34115 // desktopflow listens on http://127.0.0.1:34115/callback
 	appID            = "go-pkceflow-demo"
 )
-
-// App is the bound Wails service the frontend calls. It delegates to the
-// wails-pkceflow AuthService but exposes only the frontend-safe methods (no
-// Client() accessor, which is for Go-side API calls, not the webview).
-type App struct {
-	auth *wailspkceflow.AuthService
-}
-
-func (a *App) ServiceName() string { return "AuthDemo" }
-
-func (a *App) ServiceStartup(ctx context.Context, opts application.ServiceOptions) error {
-	return a.auth.ServiceStartup(ctx, opts)
-}
-
-func (a *App) ServiceShutdown() error { return a.auth.ServiceShutdown() }
-
-// Login starts the OIDC PKCE flow (opens the system browser).
-func (a *App) Login() wailspkceflow.AuthResult { return a.auth.Login() }
-
-// Logout clears the session and runs RP-initiated logout.
-func (a *App) Logout() wailspkceflow.AuthResult { return a.auth.Logout() }
-
-// AuthStatus reports the current session state (no network).
-func (a *App) AuthStatus() pkceflow.AuthStatusResult { return a.auth.AuthStatus() }
-
-// Claims returns the decoded ID token claims for display.
-func (a *App) Claims() (wailspkceflow.ClaimsDTO, wailspkceflow.AuthResult) { return a.auth.Claims() }
-
-// IsAuthenticated is a convenience boolean for the UI.
-func (a *App) IsAuthenticated() bool { return a.auth.IsAuthenticated() }
 
 func main() {
 	issuer := defaultIssuerURL
@@ -101,7 +70,7 @@ func main() {
 	app := application.New(application.Options{
 		Name: "go-pkceflow demo",
 		Services: []application.Service{
-			application.NewService(&App{auth: authSvc}),
+			application.NewService(authSvc.Frontend()),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),

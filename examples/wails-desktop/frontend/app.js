@@ -3,17 +3,17 @@
 // auth events and Call.ByID to invoke bound Go methods.
 import * as wails from "/wails/runtime.js";
 
-// Bound method IDs for the main.App service, taken from the output of
+// Bound method IDs for wailspkceflow.FrontendService, taken from the output of
 // `wails3 generate bindings` (each ID is a stable hash of the fully-qualified
-// method name). Regenerate and update these if you rename a method, the App
-// struct, or the package. Using Call.ByID keeps the frontend free of generated
+// method name). Regenerate and update these if you rename a method, the service
+// type, or the package. Using Call.ByID keeps the frontend free of generated
 // binding files and bare-specifier imports.
 const METHOD = {
-  Login: 1387155178,
-  Logout: 1110373539,
-  AuthStatus: 2275848593,
-  Claims: 418805388,
-  // IsAuthenticated: 3283000736, // also bound; this demo uses AuthStatus
+  Login: 2989419781,
+  Logout: 3735631246,
+  AuthStatus: 3317434184,
+  Claims: 426501781,
+  // IsAuthenticated: 2815496363, // also bound; this demo uses AuthStatus
 };
 const call = (name, ...args) => wails.Call.ByID(METHOD[name], ...args);
 

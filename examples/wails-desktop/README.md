@@ -12,7 +12,7 @@ visibly cycles while you watch.
 
 ```
 examples/wails-desktop/
-  main.go              App service (delegates to wailspkceflow.AuthService) + wiring
+  main.go              Auth service and Wails application wiring
   frontend/            Vanilla HTML + CSS + JS (no bundler, no generated bindings)
     index.html
     app.js             Events.On for notifications, Call.ByID for actions
@@ -110,17 +110,16 @@ The app hardcodes values that match `keycloak/demo-realm.json`:
 - **Events (Go -> JS):** `wailspkceflow` bridges `pkceflow` auth events to Wails
   app events. The frontend subscribes with `Events.On("oidcauth:token-refreshed", ...)`
   etc. and renders a toast. No generated code required.
-- **Actions (JS -> Go):** the frontend calls bound `App` methods with
+- **Actions (JS -> Go):** the frontend calls bound `FrontendService` methods with
   `Call.ByID(<id>)`. The IDs in `app.js` come from `wails3 generate bindings`
   (each is a stable hash of the method's fully-qualified name). Regenerate and
-  update them only if you rename a method, the `App` struct, or the package.
+  update them only if you rename a method, the service type, or the package.
 
 ## Notes
 
-- `App` is a thin `package main` service that delegates to
-  `wailspkceflow.AuthService` and exposes only frontend-safe methods. It does not
-  expose `Client()` (that accessor is for Go-side API calls via `TokenFn`, not the
-  webview), which keeps the bound surface and tokens off the frontend.
+- `authSvc.Frontend()` returns the library-provided service with exactly the
+  frontend-safe auth methods. It does not expose `Client()`, `Pause()`, or
+  `Resume()`, keeping backend controls and tokens out of the webview bindings.
 - Tokens are persisted with `filestore.NewDefault`, which resolves a per-user
   config directory without the app knowing the platform specifics.
 
