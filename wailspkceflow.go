@@ -2,6 +2,7 @@ package wailspkceflow
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 
@@ -66,6 +67,19 @@ type Options struct {
 	// event to the given deliverer. When nil, New uses Flow itself if it
 	// implements URLDeliverer. Set this only to explicitly override delivery.
 	DeepLinkDelivery URLDeliverer
+
+	// RestoreErrorPolicy controls whether an operational persistence Load
+	// failure keeps the service running or fails ServiceStartup. Optional;
+	// defaults to RestoreErrorContinue.
+	RestoreErrorPolicy RestoreErrorPolicy
+
+	// OnRestoreError receives operational persistence Load failures. It runs
+	// synchronously on the startup goroutine outside service lifecycle locks, so
+	// it must return promptly, and is never exposed to frontend bindings. The
+	// error text is safely redacted, while its backend cause remains available
+	// through errors.Is and errors.As. Applications must not forward the cause or
+	// its text to the frontend.
+	OnRestoreError func(error)
 }
 
 // AuthService adapts a pkceflow.Client to Wails v3. Construct it with New, keep
@@ -78,12 +92,19 @@ type AuthService struct {
 	autoInit bool
 	logger   *slog.Logger
 
-	serviceMu    sync.Mutex // serializes Wails startup and shutdown
-	refresh      refreshLoopController
-	refreshMu    sync.Mutex // serializes the core loop's separate stop/start steps
-	refreshState refreshLoopState
-	refreshCtx   context.Context
-	pauseReasons refreshPauseReason
+	restorePolicy  RestoreErrorPolicy
+	onRestoreError func(error)
+	restoreMu      sync.RWMutex
+	restoreStatus  RestoreStatus
+
+	serviceMu         sync.Mutex // coordinates Wails startup and shutdown
+	startupInProgress bool
+	startupStopped    bool
+	refresh           refreshLoopController
+	refreshMu         sync.Mutex // serializes the core loop's separate stop/start steps
+	refreshState      refreshLoopState
+	refreshCtx        context.Context
+	pauseReasons      refreshPauseReason
 
 	frontendOnce sync.Once
 	frontend     *FrontendService
@@ -99,10 +120,18 @@ type AuthService struct {
 
 // New builds the underlying pkceflow.Client, wiring an internal deferred event
 // bus as its emitter, and returns the Wails service. It returns the same error
-// as pkceflow.New when the configuration is invalid.
+// as pkceflow.New when the configuration is invalid, or an error when
+// RestoreErrorPolicy is not a supported value.
 //
 //nolint:gocritic // hugeParam: Options is intentionally passed by value (contains Config)
 func New(opts Options) (*AuthService, error) {
+	if !opts.RestoreErrorPolicy.valid() {
+		return nil, fmt.Errorf(
+			"wailspkceflow: unsupported restore error policy %d",
+			opts.RestoreErrorPolicy,
+		)
+	}
+
 	bus := &eventbus.DeferredEventBus{}
 
 	coreOpts := []pkceflow.Option{pkceflow.WithEventEmitter(bus)}
@@ -129,12 +158,15 @@ func New(opts Options) (*AuthService, error) {
 	}
 
 	return &AuthService{
-		client:   client,
-		bus:      bus,
-		deliver:  deliver,
-		autoInit: opts.AutoInit,
-		logger:   logger,
-		refresh:  client,
+		client:         client,
+		bus:            bus,
+		deliver:        deliver,
+		autoInit:       opts.AutoInit,
+		logger:         logger,
+		restorePolicy:  opts.RestoreErrorPolicy,
+		onRestoreError: opts.OnRestoreError,
+		restoreStatus:  RestoreStatusPending,
+		refresh:        client,
 	}, nil
 }
 
@@ -157,10 +189,9 @@ func (s *AuthService) ServiceName() string {
 // configured) deep-link launch events, and runs OIDC discovery.
 func (s *AuthService) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error {
 	app := application.Get()
-	s.startService(ctx, app.Event, platformMobileLifecycleEvents(), func() {
+	return s.startService(ctx, app.Event, platformMobileLifecycleEvents(), func() {
 		s.bus.SetTarget(&appEmitter{app: app})
 	})
-	return nil
 }
 
 func (s *AuthService) startService(
@@ -168,28 +199,97 @@ func (s *AuthService) startService(
 	subscriber applicationEventSubscriber,
 	mobileEvents mobileLifecycleEventSet,
 	onInstalled func(),
-) {
-	s.serviceMu.Lock()
-	defer s.serviceMu.Unlock()
+) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	started, teardown, err := s.beginServiceStart()
+	if err != nil {
+		return err
+	}
+	if !started {
+		return nil
+	}
+	defer s.completeServiceStart()
 
-	runCtx, installed := s.installLifecycle(ctx)
-	if !installed {
-		return
+	staleCtx := teardown.run()
+	s.stopRefreshLoop(staleCtx)
+	if err := serviceStartupContextError(ctx); err != nil {
+		return err
+	}
+	if s.serviceStartWasStopped() {
+		return nil
 	}
 
-	if onInstalled != nil {
+	s.setRestoreStatus(RestoreStatusPending)
+	restored, restoreErr := s.client.RestoreSession()
+	switch {
+	case restoreErr != nil:
+		s.setRestoreStatus(RestoreStatusPersistenceUnavailable)
+	case restored:
+		s.setRestoreStatus(RestoreStatusRestored)
+	default:
+		s.setRestoreStatus(RestoreStatusNoSession)
+	}
+
+	runCtx, startupErr := s.installServiceLifecycle(ctx, restoreErr)
+	if runCtx != nil {
+		var current bool
+		current, startupErr = s.ensureCurrentServiceStart(ctx, runCtx)
+		if !current {
+			runCtx = nil
+		}
+	}
+
+	if runCtx != nil && onInstalled != nil {
+		// Wails callouts stay outside serviceMu so event delivery can re-enter
+		// shutdown. The post-call generation check prevents lasting startup work.
 		onInstalled()
+		var current bool
+		current, startupErr = s.ensureCurrentServiceStart(ctx, runCtx)
+		if !current {
+			runCtx = nil
+		}
 	}
 
-	cleanup := s.subscribeApplicationEvents(runCtx, subscriber, mobileEvents)
-	s.setLifecycleCleanup(runCtx, cleanup)
-	if !s.isCurrentLifecycle(runCtx) {
-		return
+	if runCtx != nil {
+		// A concurrent shutdown may race with host registration. Callbacks are
+		// generation-gated, and setLifecycleCleanup immediately removes any
+		// subscriptions registered after that generation was detached.
+		cleanup := s.subscribeApplicationEvents(runCtx, subscriber, mobileEvents)
+		s.setLifecycleCleanup(runCtx, cleanup)
+		var current bool
+		current, startupErr = s.ensureCurrentServiceStart(ctx, runCtx)
+		if !current {
+			runCtx = nil
+		}
 	}
 
-	s.client.RestoreSession()
+	if restoreErr != nil {
+		s.reportRestoreError(restoreErr, runCtx)
+	}
+
+	if runCtx != nil {
+		var current bool
+		current, startupErr = s.ensureCurrentServiceStart(ctx, runCtx)
+		if !current {
+			runCtx = nil
+		}
+	}
+	if startupErr != nil {
+		return startupErr
+	}
+	if restoreErr != nil && s.restorePolicy == RestoreErrorFailStartup {
+		return fmt.Errorf("wailspkceflow: service startup failed: %w", restoreErr)
+	}
+	if runCtx == nil {
+		return nil
+	}
+
 	s.startRefreshLoop(runCtx)
-
+	if current, err := s.ensureCurrentServiceStart(ctx, runCtx); !current {
+		return err
+	}
 	if s.autoInit && s.isCurrentLifecycle(runCtx) {
 		go func() {
 			if err := s.client.Init(runCtx); err != nil {
@@ -199,6 +299,89 @@ func (s *AuthService) startService(
 			}
 		}()
 	}
+	return nil
+}
+
+func (s *AuthService) beginServiceStart() (bool, lifecycleTeardown, error) {
+	s.serviceMu.Lock()
+	defer s.serviceMu.Unlock()
+
+	if s.startupInProgress {
+		return false, lifecycleTeardown{}, ErrServiceStartupInProgress
+	}
+	if _, active := s.activeLifecycleContext(); active {
+		return false, lifecycleTeardown{}, nil
+	}
+
+	s.startupInProgress = true
+	s.startupStopped = false
+	teardown := s.detachLifecycle()
+	return true, teardown, nil
+}
+
+func (s *AuthService) serviceStartWasStopped() bool {
+	s.serviceMu.Lock()
+	defer s.serviceMu.Unlock()
+	return s.startupStopped
+}
+
+func (s *AuthService) completeServiceStart() {
+	s.serviceMu.Lock()
+	s.startupInProgress = false
+	s.startupStopped = false
+	s.serviceMu.Unlock()
+}
+
+func (s *AuthService) installServiceLifecycle(
+	ctx context.Context,
+	restoreErr error,
+) (context.Context, error) {
+	s.serviceMu.Lock()
+	defer s.serviceMu.Unlock()
+
+	if s.startupStopped {
+		return nil, nil
+	}
+	if err := serviceStartupContextError(ctx); err != nil {
+		return nil, err
+	}
+	if restoreErr != nil && s.restorePolicy == RestoreErrorFailStartup {
+		return nil, nil
+	}
+
+	runCtx, installed := s.installLifecycle(ctx)
+	if !installed {
+		return nil, nil
+	}
+	return runCtx, nil
+}
+
+func (s *AuthService) ensureCurrentServiceStart(
+	ctx context.Context,
+	runCtx context.Context,
+) (bool, error) {
+	if s.isCurrentLifecycle(runCtx) {
+		return true, nil
+	}
+
+	s.stopServiceGeneration(runCtx)
+	return false, serviceStartupContextError(ctx)
+}
+
+func (s *AuthService) stopServiceGeneration(runCtx context.Context) {
+	s.serviceMu.Lock()
+	teardown := s.detachLifecycleGeneration(runCtx)
+	s.serviceMu.Unlock()
+
+	cleared := teardown.run()
+	s.stopRefreshLoop(cleared)
+}
+
+func serviceStartupContextError(ctx context.Context) error {
+	if ctx == nil || ctx.Err() == nil {
+		return nil
+	}
+	return fmt.Errorf("wailspkceflow: service startup cancelled: %w", ctx.Err())
 }
 
 // ServiceShutdown implements the Wails ServiceShutdown interface. It stops the
@@ -206,9 +389,13 @@ func (s *AuthService) startService(
 // launch-URL and mobile lifecycle subscriptions.
 func (s *AuthService) ServiceShutdown() error {
 	s.serviceMu.Lock()
-	defer s.serviceMu.Unlock()
+	if s.startupInProgress {
+		s.startupStopped = true
+	}
+	teardown := s.detachLifecycle()
+	s.serviceMu.Unlock()
 
-	runCtx := s.clearLifecycle()
+	runCtx := teardown.run()
 	s.stopRefreshLoop(runCtx)
 	return nil
 }
@@ -326,30 +513,62 @@ func (s *AuthService) installLifecycle(parent context.Context) (context.Context,
 }
 
 func (s *AuthService) clearLifecycle() context.Context {
+	return s.detachLifecycle().run()
+}
+
+type lifecycleTeardown struct {
+	runCtx  context.Context
+	cancel  context.CancelFunc
+	cleanup func()
+}
+
+func (t lifecycleTeardown) run() context.Context {
+	if t.cancel != nil {
+		t.cancel()
+	}
+	if t.cleanup != nil {
+		t.cleanup()
+	}
+	return t.runCtx
+}
+
+func (s *AuthService) detachLifecycle() lifecycleTeardown {
+	return s.detachLifecycleMatching(context.Background(), false)
+}
+
+func (s *AuthService) detachLifecycleGeneration(expected context.Context) lifecycleTeardown {
+	return s.detachLifecycleMatching(expected, true)
+}
+
+func (s *AuthService) detachLifecycleMatching(
+	expected context.Context,
+	matchExpected bool,
+) lifecycleTeardown {
 	s.mu.Lock()
-	if !s.lifecycleActive {
-		s.lifecycleStarted = true
+	if matchExpected && (!s.lifecycleActive || s.runCtx != expected) {
 		s.mu.Unlock()
-		return nil
+		return lifecycleTeardown{}
+	}
+	if !s.lifecycleActive {
+		if !matchExpected {
+			s.lifecycleStarted = true
+		}
+		s.mu.Unlock()
+		return lifecycleTeardown{}
 	}
 
-	runCtx := s.runCtx
-	cancel := s.runCancel
-	cleanup := s.lifecycleCleanup
+	teardown := lifecycleTeardown{
+		runCtx:  s.runCtx,
+		cancel:  s.runCancel,
+		cleanup: s.lifecycleCleanup,
+	}
 	s.runCtx = nil
 	s.runCancel = nil
 	s.lifecycleCleanup = nil
 	s.lifecycleStarted = true
 	s.lifecycleActive = false
 	s.mu.Unlock()
-
-	if cancel != nil {
-		cancel()
-	}
-	if cleanup != nil {
-		cleanup()
-	}
-	return runCtx
+	return teardown
 }
 
 func (s *AuthService) setLifecycleCleanup(runCtx context.Context, cleanup func()) {

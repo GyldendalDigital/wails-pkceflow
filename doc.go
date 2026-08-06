@@ -11,9 +11,11 @@
 // does, New wires event forwarding automatically.
 //
 // Applications register AuthService.Frontend with Wails. That dedicated
-// service exposes only Login, Logout, AuthStatus, IsAuthenticated, and Claims
-// to generated bindings. AuthService.Client, Pause, and Resume remain available
-// only to Go code.
+// service exposes only Login, Logout, AuthStatus, IsAuthenticated, Claims, and
+// RestoreStatus to generated bindings. AuthService.Client, Pause, and Resume
+// remain available only to Go code. Operational persistence Load errors can be
+// handled through a Go-only callback or strict startup policy; no backend error
+// text crosses the frontend boundary.
 //
 // Usage:
 //

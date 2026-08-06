@@ -2,6 +2,7 @@ package wailspkceflow
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -304,9 +305,12 @@ func TestStartServiceIsIdempotentAndRestartable(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			service.startService(context.Background(), subscriber, mobileEvents, func() {
+			err := service.startService(context.Background(), subscriber, mobileEvents, func() {
 				installedCalls.Add(1)
 			})
+			if err != nil && !errors.Is(err, ErrServiceStartupInProgress) {
+				t.Errorf("startService: %v", err)
+			}
 		}()
 	}
 	close(start)

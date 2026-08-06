@@ -23,8 +23,9 @@ type FrontendService struct {
 
 // Frontend returns the stable service instance applications should register
 // with Wails. The returned service exposes only Login, Logout, AuthStatus,
-// IsAuthenticated, and Claims to generated frontend bindings. Wails handles
-// its ServiceName, ServiceStartup, and ServiceShutdown methods internally.
+// IsAuthenticated, Claims, and RestoreStatus to generated frontend bindings.
+// Wails handles its ServiceName, ServiceStartup, and ServiceShutdown methods
+// internally.
 func (s *AuthService) Frontend() *FrontendService {
 	s.frontendOnce.Do(func() {
 		s.frontend = &FrontendService{auth: s}
@@ -71,4 +72,10 @@ func (s *FrontendService) IsAuthenticated() bool {
 // Claims returns frontend-safe ID token claims for the current session.
 func (s *FrontendService) Claims() (ClaimsDTO, AuthResult) {
 	return s.auth.Claims()
+}
+
+// RestoreStatus returns the frontend-safe, latched outcome of the latest
+// session restoration attempt.
+func (s *FrontendService) RestoreStatus() RestoreStatus {
+	return s.auth.RestoreStatus()
 }
