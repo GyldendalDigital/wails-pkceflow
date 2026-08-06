@@ -8,7 +8,10 @@ import (
 
 // ClaimsDTO is a frontend-facing view of the ID token claims. It carries stable
 // JSON field names so the Wails binding generator produces consistent
-// TypeScript types. It never includes any token.
+// TypeScript types. It never includes an encoded ID token, access token,
+// refresh token, or core token state. Raw contains the verified claims selected
+// by the identity provider, so applications should configure provider claims
+// with the webview audience in mind.
 type ClaimsDTO struct {
 	Subject           string    `json:"subject"`
 	Name              string    `json:"name"`

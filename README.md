@@ -23,7 +23,9 @@ pinned release. This does not limit core `mobileflow` or Wails desktop use.
 - Event bridge from go-pkceflow auth events (`oidcauth:*`) to Wails application events
 - Mobile event adapter: forwards `ApplicationLaunchedWithUrl` events when the
   Wails host supplies them; beta.2 does not yet do so on Android or iOS
-- Structured, frontend-friendly results (no tokens ever cross to the frontend)
+- Library-provided frontend service with no raw OAuth token or core-client
+  access
+- Structured, frontend-friendly results with fixed, redacted error summaries
 - `Pause` / `Resume` for mobile background/foreground refresh control
 
 ## Installation
@@ -34,15 +36,15 @@ go get github.com/GyldendalDigital/wails-pkceflow
 
 ## Usage
 
-Create the auth facade with `New`, keep its core client for Go-side API calls,
-and bind a thin app-owned delegator to Wails. The delegator keeps the
-backend-only `Client()` accessor off the generated frontend surface:
+Create the auth service with `New`, keep its core client for Go-side API calls,
+and register the service returned by `Frontend()` with Wails. The frontend
+service deliberately omits the backend-only `Client()`, `Pause()`, and
+`Resume()` methods:
 
 ```go
 package main
 
 import (
-	"context"
 	"log"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -52,48 +54,6 @@ import (
 	"github.com/GyldendalDigital/go-pkceflow/filestore"
 	wailspkceflow "github.com/GyldendalDigital/wails-pkceflow"
 )
-
-type App struct {
-	auth *wailspkceflow.AuthService
-}
-
-func (a *App) ServiceName() string {
-	return "Auth"
-}
-
-func (a *App) ServiceStartup(
-	ctx context.Context,
-	opts application.ServiceOptions,
-) error {
-	return a.auth.ServiceStartup(ctx, opts)
-}
-
-func (a *App) ServiceShutdown() error {
-	return a.auth.ServiceShutdown()
-}
-
-func (a *App) Login() wailspkceflow.AuthResult {
-	return a.auth.Login()
-}
-
-func (a *App) Logout() wailspkceflow.AuthResult {
-	return a.auth.Logout()
-}
-
-func (a *App) AuthStatus() pkceflow.AuthStatusResult {
-	return a.auth.AuthStatus()
-}
-
-func (a *App) IsAuthenticated() bool {
-	return a.auth.IsAuthenticated()
-}
-
-func (a *App) Claims() (
-	wailspkceflow.ClaimsDTO,
-	wailspkceflow.AuthResult,
-) {
-	return a.auth.Claims()
-}
 
 func main() {
 	handler := desktopflow.New(15051) // desktop: localhost callback
@@ -115,14 +75,14 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Keep this in the Go API layer; do not expose it through App.
+	// Keep this in the Go API layer. Frontend() has no Client accessor.
 	client := authSvc.Client()
 	_ = client // e.g. client.TokenFn(requestContext)
 
 	app := application.New(application.Options{
 		Name: "My App",
 		Services: []application.Service{
-			application.NewService(&App{auth: authSvc}),
+			application.NewService(authSvc.Frontend()),
 		},
 	})
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
@@ -136,16 +96,15 @@ func main() {
 }
 ```
 
-The complete [desktop example](examples/wails-desktop) uses this pattern with a
-Dockerized Keycloak realm, event-driven notifications, and ID token claims.
-Registering `AuthService` itself is convenient but may expose its Go-only
-`Client()` method to Wails binding generation, so it is not the recommended
-application boundary.
+The complete [desktop example](examples/wails-desktop) includes a Dockerized
+Keycloak realm, event-driven notifications, and ID token claims.
+Register `authSvc.Frontend()`, not `authSvc`: binding `AuthService` itself would
+also expose its Go-only methods to Wails binding generation.
 
 ### Frontend-bound methods
 
-Forward only the methods your frontend needs from the app-owned delegator.
-Tokens are never returned by these methods.
+`FrontendService` exposes exactly these application methods. Tokens are never
+returned by them; Wails consumes the service lifecycle methods internally.
 
 | Method | Returns | Purpose |
 |--------|---------|---------|
@@ -159,7 +118,12 @@ Tokens are never returned by these methods.
 `flow_in_progress`, `not_initialized`, `not_authenticated`, `session_expired`,
 an OAuth2 error code, or `error`) so the frontend can branch without string
 matching. `flow_in_progress` means another frontend login or logout command is
-still active.
+still active. `message` is a fixed frontend-safe summary; backend and provider
+error text is never forwarded.
+
+`ClaimsDTO.Raw` contains all verified provider-issued ID-token claims, but not
+the encoded ID token or OAuth tokens. Configure custom claims with the webview
+audience in mind.
 
 ### Auth events
 

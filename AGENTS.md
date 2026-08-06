@@ -44,10 +44,11 @@ then adapt the wrapper only as needed.
 - Never expose raw tokens to the frontend.
 - Frontend-bound methods should return structured, inspectable results such as
   `AuthResult`, not raw Go errors or tokens.
-- Keep `Client()` for Go-side API calls only. Avoid binding it directly to the
-  frontend surface in examples.
-- Prefer thin app-level delegators in examples when needed to hide unsafe or
-  irrelevant backend methods from generated Wails bindings.
+- Keep `Client()`, `Pause()`, and `Resume()` for Go-side use only. Register
+  `AuthService.Frontend()` with Wails so generated bindings contain only the
+  library's explicitly frontend-safe methods.
+- Keep the `FrontendService` method surface minimal and test its exact Wails
+  bindings whenever it changes.
 
 ## Wails Integration Rules
 
