@@ -3,8 +3,8 @@
 A [Wails v3](https://wails.io/) service wrapper for
 [go-pkceflow](https://github.com/GyldendalDigital/go-pkceflow). It provides
 OIDC PKCE authentication as a Wails service with lifecycle management, event
-bridging, and an adapter from Wails launch-URL events to the core mobile
-callback handler.
+bridging, automatic mobile refresh-loop control, and an adapter from Wails
+launch-URL events to the core mobile callback handler.
 
 ## Status
 
@@ -19,14 +19,17 @@ pinned release. This does not limit core `mobileflow` or Wails desktop use.
 ## Features
 
 - Wails v3 service adapter with `ServiceStartup` / `ServiceShutdown` lifecycle
-- Automatic session restore, optional background OIDC discovery, and background token refresh
+- Automatic session restore, optional background OIDC discovery, and background
+  token refresh
 - Event bridge from go-pkceflow auth events (`oidcauth:*`) to Wails application events
 - Mobile event adapter: forwards `ApplicationLaunchedWithUrl` events when the
   Wails host supplies them; beta.2 does not yet do so on Android or iOS
+- Automatic refresh pause/resume from Android and iOS application lifecycle
+  events; desktop behavior is unchanged
 - Library-provided frontend service with no raw OAuth token or core-client
   access
 - Structured, frontend-friendly results with fixed, redacted error summaries
-- `Pause` / `Resume` for mobile background/foreground refresh control
+- Backend-only `Pause` / `Resume` methods for explicit application policy
 
 ## Installation
 
@@ -101,6 +104,11 @@ Dockerized Keycloak realm, event-driven notifications, and ID token claims.
 Register `authSvc.Frontend()`, not `authSvc`: binding `AuthService` itself would
 also expose its Go-only methods to Wails binding generation.
 
+While the service is active, let it own `Client().StartRefreshLoop` and
+`Client().StopRefreshLoop`; calling those core controls directly bypasses the
+wrapper's lifecycle state. Use the backend-only `authSvc.Pause()` and
+`authSvc.Resume()` methods for application policy.
+
 ### Frontend-bound methods
 
 `FrontendService` exposes exactly these application methods. Tokens are never
@@ -168,9 +176,28 @@ go somewhere other than `Flow`. The wrapper forwards every launch URL unchanged
 and never parses or logs it; hardened callback URI and state correlation belongs
 to core `mobileflow`, which safely ignores unrelated links.
 
-Call `Pause()` when the app is backgrounded and `Resume()` when it returns to
-the foreground. Service shutdown cancels a pending login/logout and removes the
-Wails launch-URL subscription.
+The wrapper automatically stops refresh work for Android `ActivityPaused` and
+iOS `ApplicationDidEnterBackground`, then resumes it for Android
+`ActivityResumed` and iOS `ApplicationWillEnterForeground`. Mobile applications
+do not need to duplicate those subscriptions. Desktop builds register no mobile
+lifecycle events. The backend-only `Pause()` and `Resume()` methods remain
+available for explicit application policy; repeated calls are no-ops. Manual
+and mobile pause reasons compose: `Pause()` remains in effect across automatic
+foreground events until Go code calls `Resume()`, and `Resume()` does not start
+refresh work while the application is still backgrounded.
+
+Service shutdown cancels a pending login/logout and removes the launch-URL and
+mobile lifecycle subscriptions. Callbacks that observe a stopped service
+generation are ignored.
+
+Wails beta.2 does not preserve source order when dispatching application events:
+it starts independent goroutines for events and listeners. The wrapper
+serializes refresh transitions but cannot reconstruct pause/resume order after
+Wails has discarded it. Beta.2 also registers native iOS listeners
+asynchronously, so it can miss an initial background event in a narrow startup
+window, and its listener teardown does not snapshot listeners before concurrent
+unsubscribe. Wrapper state remains generation-guarded; complete ordering and
+native dispatch/teardown race guarantees require upstream Wails changes.
 
 The active core flow exists only in process memory. A cold-launch URL can prove
 that the host delivered an event, but it cannot resume a login or logout whose

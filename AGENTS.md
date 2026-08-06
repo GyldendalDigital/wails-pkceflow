@@ -65,8 +65,19 @@ then adapt the wrapper only as needed.
 - Keep lifecycle methods predictable:
   - startup wires events, restores session, starts refresh loop, and optionally
     initializes discovery
-  - shutdown stops refresh loop
-  - pause/resume controls refresh loop for mobile foreground/background
+  - Android/iOS background and foreground events pause/resume refresh work
+    automatically; desktop builds register no mobile lifecycle events
+  - shutdown stops refresh work and removes all service-owned subscriptions
+  - duplicate or stale startup, pause, resume, and shutdown transitions are
+    no-ops
+  - backend-only `Pause`/`Resume` remain available for explicit application
+    policy; manual and mobile lifecycle pause reasons compose
+  - while the service is active, consumers must not call the core client's
+    refresh-loop controls directly
+- Wails beta.2 does not preserve application-event source order and has an
+  upstream listener dispatch/unsubscribe race. Keep wrapper state
+  generation-guarded and do not claim stronger native ordering or teardown
+  guarantees until Wails provides them.
 
 ## Testing
 

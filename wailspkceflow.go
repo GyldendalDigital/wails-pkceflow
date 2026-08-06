@@ -8,7 +8,6 @@ import (
 	pkceflow "github.com/GyldendalDigital/go-pkceflow"
 	"github.com/GyldendalDigital/go-pkceflow/eventbus"
 	"github.com/wailsapp/wails/v3/pkg/application"
-	"github.com/wailsapp/wails/v3/pkg/events"
 )
 
 // URLDeliverer receives a URL already surfaced by the Wails host. AuthService
@@ -24,6 +23,20 @@ type refreshLoopController interface {
 	StartRefreshLoop(context.Context)
 	StopRefreshLoop()
 }
+
+type refreshLoopState uint8
+type refreshPauseReason uint8
+
+const (
+	refreshLoopStopped refreshLoopState = iota
+	refreshLoopRunning
+	refreshLoopPaused
+)
+
+const (
+	refreshPauseManual refreshPauseReason = 1 << iota
+	refreshPauseLifecycle
+)
 
 // Options configures the AuthService facade. Config and Flow are required; the
 // rest are optional. The facade owns the event bus and wires it to Wails, so
@@ -65,19 +78,23 @@ type AuthService struct {
 	autoInit bool
 	logger   *slog.Logger
 
-	refresh   refreshLoopController
-	refreshMu sync.Mutex // serializes the core loop's separate stop/start steps
+	serviceMu    sync.Mutex // serializes Wails startup and shutdown
+	refresh      refreshLoopController
+	refreshMu    sync.Mutex // serializes the core loop's separate stop/start steps
+	refreshState refreshLoopState
+	refreshCtx   context.Context
+	pauseReasons refreshPauseReason
 
 	frontendOnce sync.Once
 	frontend     *FrontendService
 
-	mu                   sync.Mutex
-	runCtx               context.Context
-	runCancel            context.CancelFunc
-	unsubscribeLaunchURL func()
-	lifecycleStarted     bool
-	lifecycleActive      bool
-	commandActive        bool
+	mu               sync.Mutex
+	runCtx           context.Context
+	runCancel        context.CancelFunc
+	lifecycleCleanup func()
+	lifecycleStarted bool
+	lifecycleActive  bool
+	commandActive    bool
 }
 
 // New builds the underlying pkceflow.Client, wiring an internal deferred event
@@ -123,6 +140,8 @@ func New(opts Options) (*AuthService, error) {
 
 // Client returns the underlying pkceflow.Client. Use it in the app's API layer,
 // for example client.TokenFn(ctx) to inject Bearer tokens into HTTP requests.
+// While the Wails service is active, use AuthService Pause and Resume rather
+// than calling the client's refresh-loop controls directly.
 func (s *AuthService) Client() *pkceflow.Client {
 	return s.client
 }
@@ -134,28 +153,42 @@ func (s *AuthService) ServiceName() string {
 
 // ServiceStartup implements the Wails ServiceStartup interface. It wires auth
 // events to the Wails application, restores any cached session, starts the
-// background refresh loop, and (when configured) subscribes to deep-link launch
-// events and runs OIDC discovery.
+// background refresh loop, subscribes to mobile lifecycle events and (when
+// configured) deep-link launch events, and runs OIDC discovery.
 func (s *AuthService) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error {
-	runCtx := s.installLifecycle(ctx, nil)
-
 	app := application.Get()
-	s.bus.SetTarget(&appEmitter{app: app})
+	s.startService(ctx, app.Event, platformMobileLifecycleEvents(), func() {
+		s.bus.SetTarget(&appEmitter{app: app})
+	})
+	return nil
+}
 
-	if s.deliver != nil {
-		unsubscribe := app.Event.OnApplicationEvent(events.Common.ApplicationLaunchedWithUrl,
-			func(e *application.ApplicationEvent) {
-				s.handleLaunchURL(e.Context().URL())
-			})
-		s.setLifecycleSubscription(runCtx, unsubscribe)
+func (s *AuthService) startService(
+	ctx context.Context,
+	subscriber applicationEventSubscriber,
+	mobileEvents mobileLifecycleEventSet,
+	onInstalled func(),
+) {
+	s.serviceMu.Lock()
+	defer s.serviceMu.Unlock()
+
+	runCtx, installed := s.installLifecycle(ctx)
+	if !installed {
+		return
+	}
+
+	if onInstalled != nil {
+		onInstalled()
+	}
+
+	cleanup := s.subscribeApplicationEvents(runCtx, subscriber, mobileEvents)
+	s.setLifecycleCleanup(runCtx, cleanup)
+	if !s.isCurrentLifecycle(runCtx) {
+		return
 	}
 
 	s.client.RestoreSession()
-	s.refreshMu.Lock()
-	if s.isCurrentLifecycle(runCtx) {
-		s.refresh.StartRefreshLoop(runCtx)
-	}
-	s.refreshMu.Unlock()
+	s.startRefreshLoop(runCtx)
 
 	if s.autoInit && s.isCurrentLifecycle(runCtx) {
 		go func() {
@@ -166,16 +199,17 @@ func (s *AuthService) ServiceStartup(ctx context.Context, _ application.ServiceO
 			}
 		}()
 	}
-
-	return nil
 }
 
 // ServiceShutdown implements the Wails ServiceShutdown interface. It stops the
 // background refresh loop, cancels pending auth commands, and removes the
-// application launch-URL subscription.
+// launch-URL and mobile lifecycle subscriptions.
 func (s *AuthService) ServiceShutdown() error {
-	s.clearLifecycle()
-	s.stopRefreshLoop()
+	s.serviceMu.Lock()
+	defer s.serviceMu.Unlock()
+
+	runCtx := s.clearLifecycle()
+	s.stopRefreshLoop(runCtx)
 	return nil
 }
 
@@ -229,25 +263,26 @@ func (s *AuthService) Claims() (ClaimsDTO, AuthResult) {
 	return newClaimsDTO(&claims), AuthResult{OK: true}
 }
 
-// Pause stops the background token refresh loop. Call it when the app is
-// backgrounded (mobile) to avoid needless network activity and battery drain.
+// Pause stops the background token refresh loop until Resume is called. This
+// manual pause remains in effect across automatic mobile foreground events.
 func (s *AuthService) Pause() {
-	s.stopRefreshLoop()
-}
-
-// Resume restarts the background token refresh loop after Pause. Call it when
-// the app returns to the foreground. The loop continues the current session's
-// refresh schedule instead of forcing a refresh; an already-due threshold may
-// still run immediately.
-func (s *AuthService) Resume() {
-	s.refreshMu.Lock()
-	defer s.refreshMu.Unlock()
-
-	ctx, ok := s.serviceContext()
+	runCtx, ok := s.activeLifecycleContext()
 	if !ok {
 		return
 	}
-	s.refresh.StartRefreshLoop(ctx)
+	s.pauseRefreshLoop(runCtx, refreshPauseManual)
+}
+
+// Resume releases the manual pause set by Pause. Refresh work restarts only when
+// the mobile lifecycle is also in the foreground. The loop continues the
+// current session's refresh schedule instead of forcing a refresh; an
+// already-due threshold may still run immediately.
+func (s *AuthService) Resume() {
+	runCtx, ok := s.activeLifecycleContext()
+	if !ok {
+		return
+	}
+	s.resumeRefreshLoop(runCtx, refreshPauseManual)
 }
 
 // handleLaunchURL routes a deep-link callback URL to the configured deliverer.
@@ -259,18 +294,24 @@ func (s *AuthService) handleLaunchURL(url string) {
 	}
 }
 
-func (s *AuthService) installLifecycle(parent context.Context, unsubscribe func()) context.Context {
+func (s *AuthService) installLifecycle(parent context.Context) (context.Context, bool) {
 	if parent == nil {
 		parent = context.Background()
 	}
-	runCtx, cancel := context.WithCancel(parent)
 
 	s.mu.Lock()
+	if s.lifecycleActive && s.runCtx != nil && s.runCtx.Err() == nil {
+		runCtx := s.runCtx
+		s.mu.Unlock()
+		return runCtx, false
+	}
+
+	runCtx, cancel := context.WithCancel(parent)
 	oldCancel := s.runCancel
-	oldUnsubscribe := s.unsubscribeLaunchURL
+	oldCleanup := s.lifecycleCleanup
 	s.runCtx = runCtx
 	s.runCancel = cancel
-	s.unsubscribeLaunchURL = unsubscribe
+	s.lifecycleCleanup = nil
 	s.lifecycleStarted = true
 	s.lifecycleActive = true
 	s.mu.Unlock()
@@ -278,19 +319,26 @@ func (s *AuthService) installLifecycle(parent context.Context, unsubscribe func(
 	if oldCancel != nil {
 		oldCancel()
 	}
-	if oldUnsubscribe != nil {
-		oldUnsubscribe()
+	if oldCleanup != nil {
+		oldCleanup()
 	}
-	return runCtx
+	return runCtx, true
 }
 
-func (s *AuthService) clearLifecycle() {
+func (s *AuthService) clearLifecycle() context.Context {
 	s.mu.Lock()
+	if !s.lifecycleActive {
+		s.lifecycleStarted = true
+		s.mu.Unlock()
+		return nil
+	}
+
+	runCtx := s.runCtx
 	cancel := s.runCancel
-	unsubscribe := s.unsubscribeLaunchURL
+	cleanup := s.lifecycleCleanup
 	s.runCtx = nil
 	s.runCancel = nil
-	s.unsubscribeLaunchURL = nil
+	s.lifecycleCleanup = nil
 	s.lifecycleStarted = true
 	s.lifecycleActive = false
 	s.mu.Unlock()
@@ -298,54 +346,126 @@ func (s *AuthService) clearLifecycle() {
 	if cancel != nil {
 		cancel()
 	}
-	if unsubscribe != nil {
-		unsubscribe()
+	if cleanup != nil {
+		cleanup()
 	}
+	return runCtx
 }
 
-func (s *AuthService) setLifecycleSubscription(runCtx context.Context, unsubscribe func()) {
-	if unsubscribe == nil {
+func (s *AuthService) setLifecycleCleanup(runCtx context.Context, cleanup func()) {
+	if cleanup == nil {
 		return
 	}
 
 	s.mu.Lock()
-	if s.lifecycleActive && s.runCtx == runCtx {
-		s.unsubscribeLaunchURL, unsubscribe = unsubscribe, s.unsubscribeLaunchURL
+	if s.lifecycleActive && s.runCtx == runCtx && s.lifecycleCleanup == nil {
+		s.lifecycleCleanup = cleanup
+		cleanup = nil
 	}
 	s.mu.Unlock()
 
-	if unsubscribe != nil {
-		unsubscribe()
+	if cleanup != nil {
+		cleanup()
 	}
 }
 
 func (s *AuthService) isCurrentLifecycle(runCtx context.Context) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.lifecycleActive && s.runCtx == runCtx
+	return runCtx != nil && runCtx.Err() == nil && s.lifecycleActive && s.runCtx == runCtx
 }
 
-func (s *AuthService) serviceContext() (context.Context, bool) {
+func (s *AuthService) activeLifecycleContext() (context.Context, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.lifecycleStarted && !s.lifecycleActive {
+	if !s.lifecycleActive || s.runCtx == nil || s.runCtx.Err() != nil {
 		return nil, false
 	}
-	ctx := s.runCtx
-	if ctx != nil && ctx.Err() != nil {
-		return nil, false
-	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	return ctx, true
+	return s.runCtx, true
 }
 
-func (s *AuthService) stopRefreshLoop() {
+func (s *AuthService) startRefreshLoop(runCtx context.Context) {
 	s.refreshMu.Lock()
 	defer s.refreshMu.Unlock()
-	s.refresh.StopRefreshLoop()
+
+	if s.refresh == nil || !s.isCurrentLifecycle(runCtx) {
+		return
+	}
+	if s.refreshCtx == runCtx {
+		if s.refreshState == refreshLoopRunning || s.refreshState == refreshLoopPaused {
+			return
+		}
+	}
+	if s.refreshState == refreshLoopRunning {
+		s.refresh.StopRefreshLoop()
+	}
+
+	s.pauseReasons = 0
+	s.refresh.StartRefreshLoop(runCtx)
+	s.refreshState = refreshLoopRunning
+	s.refreshCtx = runCtx
+}
+
+func (s *AuthService) pauseRefreshLoop(runCtx context.Context, reason refreshPauseReason) {
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
+
+	if s.refresh == nil || !s.isCurrentLifecycle(runCtx) {
+		return
+	}
+	if s.refreshCtx != runCtx {
+		if s.refreshState == refreshLoopRunning {
+			s.refresh.StopRefreshLoop()
+		}
+		s.refreshState = refreshLoopStopped
+		s.refreshCtx = nil
+		s.pauseReasons = 0
+	}
+	if s.pauseReasons&reason != 0 {
+		return
+	}
+	if s.refreshState == refreshLoopRunning {
+		s.refresh.StopRefreshLoop()
+	}
+	s.pauseReasons |= reason
+	s.refreshState = refreshLoopPaused
+	s.refreshCtx = runCtx
+}
+
+func (s *AuthService) resumeRefreshLoop(runCtx context.Context, reason refreshPauseReason) {
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
+
+	if s.refresh == nil || !s.isCurrentLifecycle(runCtx) ||
+		s.refreshState != refreshLoopPaused || s.refreshCtx != runCtx || s.pauseReasons&reason == 0 {
+		return
+	}
+	s.pauseReasons &^= reason
+	if s.pauseReasons != 0 {
+		return
+	}
+	s.refresh.StartRefreshLoop(runCtx)
+	s.refreshState = refreshLoopRunning
+}
+
+func (s *AuthService) stopRefreshLoop(runCtx context.Context) {
+	if runCtx == nil {
+		return
+	}
+
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
+
+	if s.refresh == nil || s.refreshState == refreshLoopStopped || s.refreshCtx != runCtx {
+		return
+	}
+	if s.refreshState == refreshLoopRunning {
+		s.refresh.StopRefreshLoop()
+	}
+	s.refreshState = refreshLoopStopped
+	s.refreshCtx = nil
+	s.pauseReasons = 0
 }
 
 func (s *AuthService) beginCommand() (context.Context, AuthResult, bool) {

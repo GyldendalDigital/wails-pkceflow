@@ -98,8 +98,7 @@ func TestLogout(t *testing.T) {
 
 func TestPauseResume_SafeWithoutStartup(t *testing.T) {
 	svc := newTestService(t)
-	// runCtx is nil before ServiceStartup; Resume must fall back to a background
-	// context and neither call should panic.
+	// Lifecycle controls are no-ops before Wails starts the service.
 	svc.Resume()
 	svc.Pause()
 }
