@@ -55,10 +55,9 @@ type Options struct {
 	DeepLinkDelivery URLDeliverer
 }
 
-// AuthService adapts a pkceflow.Client to Wails v3. Construct it with New and
-// keep Client for Go-side API calls. Applications should normally bind a thin
-// delegator that forwards only frontend-safe methods, leaving Client off the
-// generated binding surface. See the package README and desktop example.
+// AuthService adapts a pkceflow.Client to Wails v3. Construct it with New, keep
+// Client for Go-side API calls, and register Frontend() with Wails. Registering
+// AuthService itself would expose backend-only methods to generated bindings.
 type AuthService struct {
 	client   *pkceflow.Client
 	bus      *eventbus.DeferredEventBus
@@ -68,6 +67,9 @@ type AuthService struct {
 
 	refresh   refreshLoopController
 	refreshMu sync.Mutex // serializes the core loop's separate stop/start steps
+
+	frontendOnce sync.Once
+	frontend     *FrontendService
 
 	mu                   sync.Mutex
 	runCtx               context.Context
@@ -177,9 +179,9 @@ func (s *AuthService) ServiceShutdown() error {
 	return nil
 }
 
-// Login runs the OIDC Authorization Code + PKCE flow. It is bound to the
-// frontend and returns a structured AuthResult (never a raw error, never a
-// token). The login timeout comes from the client Config.
+// Login runs the OIDC Authorization Code + PKCE flow. FrontendService exposes
+// it to the frontend as a structured AuthResult (never a raw error or token).
+// The login timeout comes from the client Config.
 func (s *AuthService) Login() AuthResult {
 	ctx, rejected, ok := s.beginCommand()
 	if !ok {
@@ -193,7 +195,7 @@ func (s *AuthService) Login() AuthResult {
 // supported, performs RP-Initiated Logout. Persistence failures and
 // non-cancellation browser logout failures are logged by the core client rather
 // than returned; cancellation of the best-effort browser round trip is silent.
-// This frontend-bound method returns a structured AuthResult, and the logout
+// FrontendService exposes this as a structured AuthResult, and the logout
 // timeout comes from the client Config.
 func (s *AuthService) Logout() AuthResult {
 	ctx, rejected, ok := s.beginCommand()

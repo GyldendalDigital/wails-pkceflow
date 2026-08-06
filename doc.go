@@ -1,13 +1,18 @@
 // Package wailspkceflow adapts the framework-agnostic go-pkceflow OIDC client to
 // a Wails v3 service.
 //
-// It provides a single facade, AuthService, that owns a *pkceflow.Client, bridges
-// the client's auth lifecycle events to Wails application events, manages the
-// background token refresh loop across the Wails service lifecycle, and (on
-// mobile) subscribes to Wails launch-URL events and forwards them into the
-// client's flow handler. Native Android/iOS event production remains the Wails
-// host's responsibility. When Flow implements URLDeliverer, as
-// mobileflow.Handler does, New wires event forwarding automatically.
+// AuthService owns a *pkceflow.Client, bridges the client's auth lifecycle
+// events to Wails application events, manages the background token refresh loop
+// across the Wails service lifecycle, and (on mobile) subscribes to Wails
+// launch-URL events and forwards them into the client's flow handler. Native
+// Android/iOS event production remains the Wails host's responsibility. When
+// Flow implements URLDeliverer, as mobileflow.Handler does, New wires event
+// forwarding automatically.
+//
+// Applications register AuthService.Frontend with Wails. That dedicated
+// service exposes only Login, Logout, AuthStatus, IsAuthenticated, and Claims
+// to generated bindings. AuthService.Client, Pause, and Resume remain available
+// only to Go code.
 //
 // Usage:
 //
@@ -29,12 +34,9 @@
 //
 //	client := authSvc.Client() // client.TokenFn(ctx) for the app's API calls
 //
-//	// Bind an app-owned delegator that forwards only frontend-safe methods.
+//	// Bind the library-provided frontend-safe service.
 //	app := application.New(application.Options{Name: "My App"})
-//	app.RegisterService(application.NewService(&App{auth: authSvc}))
+//	app.RegisterService(application.NewService(authSvc.Frontend()))
 //
-// App is a thin service owned by the application. It delegates Login, Logout,
-// AuthStatus, Claims, IsAuthenticated, and lifecycle methods to authSvc without
-// exposing Client(). See the repository README and desktop example for the
-// complete type. Access, ID, and refresh tokens stay in the Go backend.
+// Access, ID, and refresh tokens stay in the Go backend.
 package wailspkceflow

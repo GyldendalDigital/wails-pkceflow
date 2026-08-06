@@ -71,9 +71,9 @@ If you discover a security vulnerability, please report it privately via GitHub'
 
 When wrapper behavior changes, check the README, package `doc.go`, and desktop
 example together. Also verify whether the core README, architecture, or
-provider guides need a corresponding update. Examples should bind an app-owned
-delegator so backend-only methods such as `Client()` stay off the frontend
-surface.
+provider guides need a corresponding update. Examples should register
+`AuthService.Frontend()` so backend-only methods such as `Client()`, `Pause()`,
+and `Resume()` stay off the frontend surface.
 
 ## License
 
