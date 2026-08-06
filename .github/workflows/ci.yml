@@ -62,6 +62,12 @@ jobs:
       - name: Build (gtk3)
         run: go build -tags gtk3 ./...
 
+      - name: Compile Android package tests
+        run: |
+          CC="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang" \
+          CGO_ENABLED=1 GOOS=android GOARCH=arm64 \
+          go test -c -o /tmp/wails-pkceflow-android.test .
+
       - name: Verify example go.mod/go.sum are tidy
         working-directory: examples/wails-desktop
         run: |
@@ -135,6 +141,15 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: go build -tags "${{ matrix.tags }}" ./...
+
+      - name: Build wrapper module (iOS simulator)
+        if: matrix.target == 'macos-arm64'
+        run: |
+          SDK_PATH="$(xcrun --sdk iphonesimulator --show-sdk-path)"
+          CGO_ENABLED=1 GOOS=ios GOARCH=arm64 \
+          CGO_CFLAGS="-isysroot $SDK_PATH -target arm64-apple-ios15.0-simulator -mios-simulator-version-min=15.0" \
+          CGO_LDFLAGS="-isysroot $SDK_PATH -target arm64-apple-ios15.0-simulator" \
+          go build ./...
 
       - name: Build example app
         env:
