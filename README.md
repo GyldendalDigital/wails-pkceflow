@@ -96,8 +96,8 @@ func main() {
 }
 ```
 
-The complete [desktop example](examples/wails-desktop) includes a Dockerized
-Keycloak realm, event-driven notifications, and ID token claims.
+The complete [desktop example](examples/wails-desktop) uses this pattern with a
+Dockerized Keycloak realm, event-driven notifications, and ID token claims.
 Register `authSvc.Frontend()`, not `authSvc`: binding `AuthService` itself would
 also expose its Go-only methods to Wails binding generation.
 

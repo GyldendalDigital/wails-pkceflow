@@ -68,6 +68,12 @@ jobs:
           go mod tidy
           git diff --exit-code go.mod go.sum
 
+      - name: Build example against pinned wrapper (gtk4 + gtk3)
+        working-directory: examples/wails-desktop
+        run: |
+          GOWORK=off go build -mod=readonly -o /dev/null .
+          GOWORK=off go build -mod=readonly -tags gtk3 -o /dev/null .
+
       - name: Build example against local wrapper (gtk4 + gtk3)
         working-directory: examples/wails-desktop
         run: |

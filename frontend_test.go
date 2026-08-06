@@ -2,7 +2,10 @@ package wailspkceflow_test
 
 import (
 	"context"
+	"os"
 	"reflect"
+	"regexp"
+	"strconv"
 	"sync"
 	"testing"
 
@@ -87,14 +90,7 @@ func TestFrontendServiceHasExactPublicMethodSurface(t *testing.T) {
 }
 
 func TestFrontendServiceWailsBindingSurface(t *testing.T) {
-	// Wails beta.2 logs binding registration through its global application.
-	initializeWailsTestApp.Do(func() {
-		_ = application.New(application.Options{})
-	})
-	bindings := application.NewBindings(nil, nil)
-	if err := bindings.Add(application.NewService(newTestService(t).Frontend())); err != nil {
-		t.Fatalf("add frontend service bindings: %v", err)
-	}
+	bindings := newFrontendBindings(t)
 
 	const prefix = "github.com/GyldendalDigital/wails-pkceflow.FrontendService."
 	for _, name := range []string{"AuthStatus", "Claims", "IsAuthenticated", "Login", "Logout"} {
@@ -121,4 +117,52 @@ func TestFrontendServiceWailsBindingSurface(t *testing.T) {
 			t.Errorf("backend-only method %s was bound", name)
 		}
 	}
+}
+
+func TestDesktopExampleUsesFrontendServiceBindingIDs(t *testing.T) {
+	bindings := newFrontendBindings(t)
+	contents, err := os.ReadFile("examples/wails-desktop/frontend/app.js")
+	if err != nil {
+		t.Fatalf("read desktop example app.js: %v", err)
+	}
+
+	const prefix = "github.com/GyldendalDigital/wails-pkceflow.FrontendService."
+	for _, name := range []string{"AuthStatus", "Claims", "Login", "Logout"} {
+		method := bindings.Get(&application.CallOptions{MethodName: prefix + name})
+		if method == nil {
+			t.Fatalf("safe method %s was not bound", name)
+		}
+		if got := desktopExampleBindingID(t, contents, name); got != method.ID {
+			t.Errorf("desktop example %s binding ID = %d, want %d", name, got, method.ID)
+		}
+	}
+}
+
+func desktopExampleBindingID(t *testing.T, contents []byte, name string) uint32 {
+	t.Helper()
+
+	pattern := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(name) + `:\s*([0-9]+),\s*$`)
+	matches := pattern.FindAllSubmatch(contents, -1)
+	if len(matches) != 1 {
+		t.Fatalf("desktop example app.js has %d active %s binding IDs, want 1", len(matches), name)
+	}
+	id, err := strconv.ParseUint(string(matches[0][1]), 10, 32)
+	if err != nil {
+		t.Fatalf("parse desktop example %s binding ID: %v", name, err)
+	}
+	return uint32(id)
+}
+
+func newFrontendBindings(t *testing.T) *application.Bindings {
+	t.Helper()
+
+	// Wails beta.2 logs binding registration through its global application.
+	initializeWailsTestApp.Do(func() {
+		_ = application.New(application.Options{})
+	})
+	bindings := application.NewBindings(nil, nil)
+	if err := bindings.Add(application.NewService(newTestService(t).Frontend())); err != nil {
+		t.Fatalf("add frontend service bindings: %v", err)
+	}
+	return bindings
 }
