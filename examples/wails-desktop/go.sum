@@ -1,5 +1,5 @@
-github.com/GyldendalDigital/go-pkceflow v0.9.0-beta.7 h1:fRfbc0Iu+/vvDRo4SdVLNTR6Y8R8KbACqfmpssVG6gA=
-github.com/GyldendalDigital/go-pkceflow v0.9.0-beta.7/go.mod h1:l6l1yt2gLRtBEsuuFxE7FOck9zuSQQ8bMF9VYUicFyI=
+github.com/GyldendalDigital/go-pkceflow v0.9.0-beta.8 h1:R8FuSXlD2q3tMdibH7mLSxxHbLTcPQHJo4GU0EeOakI=
+github.com/GyldendalDigital/go-pkceflow v0.9.0-beta.8/go.mod h1:l6l1yt2gLRtBEsuuFxE7FOck9zuSQQ8bMF9VYUicFyI=
 github.com/GyldendalDigital/wails-pkceflow v0.9.0-alpha.5 h1:E2dKpz7y1+jxxx7543YzUqXnMbH7GRnIP11gUyl3quU=
 github.com/GyldendalDigital/wails-pkceflow v0.9.0-alpha.5/go.mod h1:fEzTET2CASkAFwF+dwLTd5oFpjxaLbHA3py99wn/mjA=
 github.com/adrg/xdg v0.5.3 h1:xRnxJXne7+oWDatRhR1JLnvuccuIeCoBu2rtuLqQB78=
