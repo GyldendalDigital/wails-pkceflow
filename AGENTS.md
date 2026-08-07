@@ -23,6 +23,8 @@ It owns:
 - Wails service lifecycle integration.
 - Deferred event bridge from core `oidcauth:*` events to Wails app events.
 - Frontend-safe results and DTOs.
+- Startup restore-error policy, Go-only reporting, and latched frontend-safe
+  restore status.
 - Subscription and forwarding from Wails launch URL events to core
   `mobileflow`. Native Android/iOS event production is owned by Wails.
 - Wails example app and wrapper-specific documentation.
@@ -49,6 +51,8 @@ then adapt the wrapper only as needed.
   library's explicitly frontend-safe methods.
 - Keep the `FrontendService` method surface minimal and test its exact Wails
   bindings whenever it changes.
+- Keep `RestoreStatus` a closed frontend-safe outcome with no native error text;
+  restore errors and their unwrap chain remain Go-only.
 
 ## Wails Integration Rules
 
@@ -65,11 +69,13 @@ then adapt the wrapper only as needed.
 - Keep lifecycle methods predictable:
   - startup wires events, restores session, starts refresh loop, and optionally
     initializes discovery
+  - strict restore failure happens before installing subscriptions, refresh
+    work, the event target, or discovery; continue mode is the default
   - Android/iOS background and foreground events pause/resume refresh work
     automatically; desktop builds register no mobile lifecycle events
   - shutdown stops refresh work and removes all service-owned subscriptions
-  - duplicate or stale startup, pause, resume, and shutdown transitions are
-    no-ops
+  - startup after activation and stale pause/resume/shutdown transitions are
+    no-ops; overlapping startup returns `ErrServiceStartupInProgress`
   - backend-only `Pause`/`Resume` remain available for explicit application
     policy; manual and mobile lifecycle pause reasons compose
   - while the service is active, consumers must not call the core client's
@@ -98,6 +104,7 @@ module in the dev `go.work`.
 ## Cross-Repo Dependency Notes
 
 - Wrapper module currently depends on `go-pkceflow`.
+- Wrapper restore-error handling requires core `v0.9.0-beta.7` or newer.
 - Example app may pin a newer core release than the wrapper module itself.
 - When changing core APIs, update wrapper usage, wrapper docs, and example app
   pins deliberately.

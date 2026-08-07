@@ -21,6 +21,8 @@ pinned release. This does not limit core `mobileflow` or Wails desktop use.
 - Wails v3 service adapter with `ServiceStartup` / `ServiceShutdown` lifecycle
 - Automatic session restore, optional background OIDC discovery, and background
   token refresh
+- Configurable handling of operational session-restore failures, with a
+  frontend-safe latched status
 - Event bridge from go-pkceflow auth events (`oidcauth:*`) to Wails application events
 - Mobile event adapter: forwards `ApplicationLaunchedWithUrl` events when the
   Wails host supplies them; beta.2 does not yet do so on Android or iOS
@@ -109,6 +111,68 @@ While the service is active, let it own `Client().StartRefreshLoop` and
 wrapper's lifecycle state. Use the backend-only `authSvc.Pause()` and
 `authSvc.Resume()` methods for application policy.
 
+### Session restore failures
+
+Session restoration distinguishes a normal logged-out start from an operational
+persistence failure. Missing or malformed persisted content is a normal
+`no_session` outcome. A Keychain, Keystore, permission, I/O, or native bridge
+failure is `persistence_unavailable`.
+
+The compatibility-default `RestoreErrorContinue` policy starts the service
+logged out or with any unchanged usable in-memory state, logs a fixed warning,
+and emits the advisory
+`wailspkceflow:restore-persistence-unavailable` event. Set
+`RestoreErrorFailStartup` when an operational failure from an attempted startup
+Load must abort startup:
+
+```go
+authSvc, err := wailspkceflow.New(wailspkceflow.Options{
+	Config:             config,
+	Flow:               handler,
+	Store:              store,
+	RestoreErrorPolicy: wailspkceflow.RestoreErrorFailStartup,
+	OnRestoreError: func(err error) {
+		// Go-only policy or telemetry. Use errors.Is/errors.As deliberately;
+		// never forward the cause or its text to the frontend.
+		_ = err
+		reportPersistenceUnavailable()
+	},
+})
+```
+
+Strict failure occurs before event subscriptions, refresh work, and background
+discovery start. `OnRestoreError`, when configured, runs synchronously in both
+modes outside the service lifecycle lock and must return promptly. The returned
+and callback errors have fixed safe text and preserve the backend cause for
+Go-side `errors.Is` / `errors.As` use.
+An overlapping `ServiceStartup` call returns `ErrServiceStartupInProgress`;
+calling startup again after the service is active remains an idempotent no-op.
+Strict mode fails that startup attempt; it does not zeroize or revoke an
+existing in-memory session, hide the backend-only `Client()`, or monitor later
+Save/Delete availability.
+
+Core can also retain an authoritative in-memory generation whose Save is still
+pending recovery. In that case `RestoreSession` returns `restored` without
+probing Load, and strict startup proceeds. Strict mode is an error policy, not a
+forced persistence-health probe.
+
+Frontend listeners may not exist during Wails service startup, so the event is
+only advisory. Its payload is the string `"persistence_unavailable"`.
+`RestoreStatus()` is the authoritative latched query:
+
+| Value | Meaning |
+|-------|---------|
+| `pending` | Startup has not completed its latest restore attempt |
+| `restored` | Non-zero persisted or authoritative in-memory state was retained or installed |
+| `no_session` | No usable persisted state was returned; missing and malformed content land here |
+| `persistence_unavailable` | An operational persistence Load failure prevented restoration |
+
+Restore status describes the startup Load attempt, not current token validity;
+use `AuthStatus()` for validity and grace-period decisions. It also does not
+report later persistence Save failures after login/refresh or Delete failures
+during logout. Those transitions follow the core library's documented
+durability behavior.
+
 ### Frontend-bound methods
 
 `FrontendService` exposes exactly these application methods. Tokens are never
@@ -121,6 +185,7 @@ returned by them; Wails consumes the service lifecycle methods internally.
 | `AuthStatus()` | `pkceflow.AuthStatusResult` | Current auth state (no network) |
 | `IsAuthenticated()` | `bool` | Whether a usable session exists |
 | `Claims()` | `(ClaimsDTO, AuthResult)` | Decoded ID token claims |
+| `RestoreStatus()` | `RestoreStatus` | Latched, frontend-safe session restore outcome |
 
 `AuthResult` carries a stable `code` (`""` on success, or `cancelled`,
 `flow_in_progress`, `not_initialized`, `not_authenticated`, `session_expired`,
@@ -143,6 +208,13 @@ them in the frontend or in Go:
 - `oidcauth:token-refreshed`
 - `oidcauth:session-expired`
 - `oidcauth:init-failed`
+
+The wrapper also emits
+`wailspkceflow:restore-persistence-unavailable` as a startup advisory. Its
+payload is `"persistence_unavailable"`; query `RestoreStatus()` for the latched
+outcome. As with other Wails application events, concurrent asynchronous
+shutdown may race with delivery; it cannot restart refresh work or leave a
+service-owned subscription active.
 
 ### Mobile
 

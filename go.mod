@@ -3,7 +3,7 @@ module github.com/GyldendalDigital/wails-pkceflow
 go 1.25.0
 
 require (
-	github.com/GyldendalDigital/go-pkceflow v0.9.0-beta.6
+	github.com/GyldendalDigital/go-pkceflow v0.9.0-beta.7
 	github.com/wailsapp/wails/v3 v3.0.0-beta.2
 )
 

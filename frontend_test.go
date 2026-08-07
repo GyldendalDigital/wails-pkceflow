@@ -49,6 +49,9 @@ func TestFrontendDelegatesAuthOperations(t *testing.T) {
 	if frontend.IsAuthenticated() {
 		t.Fatal("IsAuthenticated returned true before login")
 	}
+	if got := frontend.RestoreStatus(); got != wailspkceflow.RestoreStatusPending {
+		t.Fatalf("RestoreStatus before startup = %q, want pending", got)
+	}
 	if result := frontend.Login(); !result.OK {
 		t.Fatalf("Login: %+v", result)
 	}
@@ -80,6 +83,7 @@ func TestFrontendServiceHasExactPublicMethodSurface(t *testing.T) {
 		"IsAuthenticated",
 		"Login",
 		"Logout",
+		"RestoreStatus",
 		"ServiceName",
 		"ServiceShutdown",
 		"ServiceStartup",
@@ -93,7 +97,14 @@ func TestFrontendServiceWailsBindingSurface(t *testing.T) {
 	bindings := newFrontendBindings(t)
 
 	const prefix = "github.com/GyldendalDigital/wails-pkceflow.FrontendService."
-	for _, name := range []string{"AuthStatus", "Claims", "IsAuthenticated", "Login", "Logout"} {
+	for _, name := range []string{
+		"AuthStatus",
+		"Claims",
+		"IsAuthenticated",
+		"Login",
+		"Logout",
+		"RestoreStatus",
+	} {
 		method := bindings.Get(&application.CallOptions{MethodName: prefix + name})
 		if method == nil {
 			t.Errorf("safe method %s was not bound", name)
