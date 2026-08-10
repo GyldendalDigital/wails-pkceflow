@@ -49,9 +49,9 @@ func main() {
 		log.Fatalf("token store: %v", err)
 	}
 
-	handler := desktopflow.New(callbackPort)
-	if err := handler.SetLogoutPath("/logout-callback"); err != nil {
-		log.Fatalf("logout path: %v", err)
+	flow := desktopflow.New(callbackPort)
+	if err := flow.SetLogoutPath("/logout-callback"); err != nil {
+		log.Fatalf("configure logout callback path: %v", err)
 	}
 
 	authSvc, err := wailspkceflow.New(wailspkceflow.Options{
@@ -59,7 +59,7 @@ func main() {
 			IssuerURL: issuer,
 			ClientID:  clientID,
 		},
-		Flow:     handler,
+		Flow:     flow,
 		Store:    store,
 		AutoInit: true, // run OIDC discovery in the background on startup
 	})
