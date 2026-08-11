@@ -50,7 +50,9 @@ service deliberately omits the backend-only `Client()`, `Pause()`, and
 package main
 
 import (
+	"context"
 	"log"
+	"net/http"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
@@ -82,7 +84,11 @@ func main() {
 
 	// Keep this in the Go API layer. Frontend() has no Client accessor.
 	client := authSvc.Client()
-	_ = client // e.g. client.TokenFn(requestContext)
+	// Use BearerTransport to inject tokens into API calls automatically:
+	apiClient := &http.Client{
+		Transport: pkceflow.BearerTransport(client.TokenFn(context.Background()), nil),
+	}
+	_ = apiClient // inject into your API service constructors
 
 	app := application.New(application.Options{
 		Name: "My App",
