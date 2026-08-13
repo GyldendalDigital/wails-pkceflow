@@ -1,81 +1,57 @@
 package wailspkceflow
 
 import (
-	"context"
-
 	pkceflow "github.com/GyldendalDigital/go-pkceflow"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
+// frontendAuth defines the methods exposed to Wails frontend bindings.
+// AuthService must satisfy this interface; violations are caught at compile time.
+type frontendAuth interface {
+	Login() AuthResult
+	Logout() AuthResult
+	AuthStatus() pkceflow.AuthStatusResult
+	IsAuthenticated() bool
+	Claims() (ClaimsDTO, AuthResult)
+	RestoreStatus() RestoreStatus
+}
+
+// serviceLifecycle defines the Wails service lifecycle contract.
+type serviceLifecycle interface {
+	application.ServiceName
+	application.ServiceStartup
+	application.ServiceShutdown
+}
+
+// Compile-time checks: AuthService satisfies both contracts.
 var (
-	_ application.ServiceName     = (*FrontendService)(nil)
-	_ application.ServiceStartup  = (*FrontendService)(nil)
-	_ application.ServiceShutdown = (*FrontendService)(nil)
+	_ frontendAuth     = (*AuthService)(nil)
+	_ serviceLifecycle = (*AuthService)(nil)
 )
 
 // FrontendService is the Wails-bindable, frontend-safe view of AuthService.
-// Obtain it from [AuthService.Frontend]; its zero value is not usable. It
-// deliberately exposes no core client, manual pause/resume controls, or
-// token-bearing API.
+// It embeds the frontend method contract and the service lifecycle contract,
+// delegating all calls to the backing AuthService via interface promotion.
+// Only methods declared in [frontendAuth] appear in generated frontend bindings;
+// backend-only methods (Client, Pause, Resume) are not reachable from the
+// webview. The [serviceLifecycle] methods are recognized by Wails for startup,
+// shutdown, and naming but are excluded from generated bindings by convention.
 type FrontendService struct {
-	auth *AuthService
+	frontendAuth
+	serviceLifecycle
 }
 
 // Frontend returns the stable service instance applications should register
-// with Wails. The returned service exposes only Login, Logout, AuthStatus,
-// IsAuthenticated, Claims, and RestoreStatus to generated frontend bindings.
-// Wails handles its ServiceName, ServiceStartup, and ServiceShutdown methods
-// internally.
+// with Wails. Wails binds the promoted frontendAuth methods (Login, Logout,
+// AuthStatus, IsAuthenticated, Claims, RestoreStatus) and manages lifecycle
+// via the promoted serviceLifecycle methods (ServiceName, ServiceStartup,
+// ServiceShutdown).
 func (s *AuthService) Frontend() *FrontendService {
 	s.frontendOnce.Do(func() {
-		s.frontend = &FrontendService{auth: s}
+		s.frontend = &FrontendService{
+			frontendAuth:     s,
+			serviceLifecycle: s,
+		}
 	})
 	return s.frontend
-}
-
-// ServiceName implements the Wails ServiceName interface.
-func (s *FrontendService) ServiceName() string {
-	return s.auth.ServiceName()
-}
-
-// ServiceStartup implements the Wails ServiceStartup interface.
-func (s *FrontendService) ServiceStartup(ctx context.Context, opts application.ServiceOptions) error {
-	return s.auth.ServiceStartup(ctx, opts)
-}
-
-// ServiceShutdown implements the Wails ServiceShutdown interface.
-func (s *FrontendService) ServiceShutdown() error {
-	return s.auth.ServiceShutdown()
-}
-
-// Login starts the OIDC Authorization Code + PKCE flow.
-func (s *FrontendService) Login() AuthResult {
-	return s.auth.Login()
-}
-
-// Logout clears the current session and performs best-effort provider logout.
-func (s *FrontendService) Logout() AuthResult {
-	return s.auth.Logout()
-}
-
-// AuthStatus reports the current authentication state without making a
-// network request.
-func (s *FrontendService) AuthStatus() pkceflow.AuthStatusResult {
-	return s.auth.AuthStatus()
-}
-
-// IsAuthenticated reports whether the user currently has a usable session.
-func (s *FrontendService) IsAuthenticated() bool {
-	return s.auth.IsAuthenticated()
-}
-
-// Claims returns frontend-safe ID token claims for the current session.
-func (s *FrontendService) Claims() (ClaimsDTO, AuthResult) {
-	return s.auth.Claims()
-}
-
-// RestoreStatus returns the frontend-safe, latched outcome of the latest
-// session restoration attempt.
-func (s *FrontendService) RestoreStatus() RestoreStatus {
-	return s.auth.RestoreStatus()
 }
