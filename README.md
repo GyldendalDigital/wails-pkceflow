@@ -10,8 +10,8 @@ launch-URL events to the core mobile callback handler.
 
 **Pre-1.0 alpha wrapper, tested with Wails v3.0.0-beta.2.** The wrapper API may
 still change. A vanilla Keycloak run has covered login, token exchange, refresh,
-and logout on Linux, plus login, exchange, and refresh on Windows. macOS and
-Windows logout still need manual validation. The wrapper's mobile adapter is
+and logout on both Linux and Windows. The macOS auth lifecycle still needs
+manual validation. The wrapper's mobile adapter is
 unit-tested, but Wails beta.2 does not produce the required launch-URL events on
 Android or iOS, so end-to-end Wails mobile support is not available on the
 pinned release. This does not limit core `mobileflow` or Wails desktop use.
