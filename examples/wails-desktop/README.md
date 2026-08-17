@@ -102,6 +102,7 @@ The app hardcodes values that match `keycloak/demo-realm.json`:
 | Issuer URL | `http://localhost:8080/realms/demo` |
 | Client ID | `demo-native` (public, PKCE S256) |
 | Redirect URI | `http://127.0.0.1:34115/callback` |
+| Post-logout redirect URI | `http://127.0.0.1:34115/logout-callback` |
 | User / password | `demo` / `demo` |
 | Access token lifespan | 180s |
 
