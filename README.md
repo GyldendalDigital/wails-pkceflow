@@ -175,7 +175,11 @@ only advisory. Its payload is the string `"persistence_unavailable"`.
 | `persistence_unavailable` | An operational persistence Load failure prevented restoration |
 
 Restore status describes the startup Load attempt, not current token validity;
-use `AuthStatus()` for validity and grace-period decisions. It also does not
+use `AuthStatus()` for validity and grace-period decisions. In particular
+`restored` does not imply a usable session: a session the provider has refused
+still restores, because the ID token is retained so `Claims()` can name the user
+for a re-authentication prompt. Gate the UI on `AuthStatus()` or
+`IsAuthenticated()`, never on `restored`. It also does not
 report later persistence Save failures after login/refresh or Delete failures
 during logout. Those transitions follow the core library's documented
 durability behavior.
@@ -188,11 +192,19 @@ returned by them; Wails consumes the service lifecycle methods internally.
 | Method | Returns | Purpose |
 |--------|---------|---------|
 | `Login()` | `AuthResult` | Start the OIDC PKCE login flow |
-| `Logout()` | `AuthResult` | Clear in-memory state, attempt persistence deletion, and run RP-Initiated Logout when supported |
+| `Logout()` | `AuthResult` | Clear in-memory state, attempt persistence deletion, revoke the refresh token when the provider advertises an endpoint, and run RP-Initiated Logout when supported |
 | `AuthStatus()` | `pkceflow.AuthStatusResult` | Current auth state (no network) |
 | `IsAuthenticated()` | `bool` | Whether a usable session exists |
 | `Claims()` | `(ClaimsDTO, AuthResult)` | Decoded ID token claims |
 | `RestoreStatus()` | `RestoreStatus` | Latched, frontend-safe session restore outcome |
+
+`AuthStatus()` and `IsAuthenticated()` report whether a session is usable,
+including while the core library's offline grace period covers an expired access
+token. Grace is asymmetric by design: it covers "the app could not reach the
+provider", and it ends immediately when the provider is reachable and refuses the
+refresh token, so a revoked account stops working at once rather than coasting to
+the end of the grace window. That refusal is persisted, so it also survives a
+restart. See the core library's "Grace Period Semantics" for the full table.
 
 `AuthResult` carries a stable `code` (`""` on success, or `cancelled`,
 `flow_in_progress`, `not_initialized`, `not_authenticated`, `session_expired`,
@@ -215,6 +227,16 @@ them in the frontend or in Go:
 - `oidcauth:token-refreshed`
 - `oidcauth:session-expired`
 - `oidcauth:init-failed`
+
+`oidcauth:session-expired` needs care. It fires as soon as the provider refuses
+the refresh token, which can be during `ServiceStartup` — before the webview has
+run its JavaScript and attached listeners. It is emitted at most once per
+refusal and is never re-emitted on a later launch, so a frontend that only
+listens for the event can miss it permanently.
+
+**Call `AuthStatus()` when your frontend mounts** and treat
+`can_use_app == false` as the authoritative logged-out signal. Use the event to
+react promptly while the app is running, not as the only source of truth.
 
 The wrapper also emits
 `wailspkceflow:restore-persistence-unavailable` as a startup advisory. Its
@@ -315,7 +337,8 @@ go run .
 ## Custom HTTP client
 
 `Options.HTTPClient` is used for every outbound request the core client makes:
-OIDC discovery, JWKS fetching, token exchange, and token refresh.
+OIDC discovery, JWKS fetching, token exchange, token refresh, and token
+revocation on logout.
 
 Set it. The standard library's default client has **no timeout**, so a slow or
 blackholed token endpoint blocks every caller of the token getter indefinitely,
@@ -336,7 +359,10 @@ Use the same field for corporate proxies, custom CA bundles or mutual TLS, and
 transport tuning. The client is passed to `pkceflow.WithHTTPClient` unchanged;
 the library never mutates it and never disables TLS verification on your behalf.
 Context deadlines (`LoginTimeout`, `LogoutTimeout`, and any `ctx` you pass) still
-apply independently of the client's own `Timeout`.
+apply independently of the client's own `Timeout`, except that the revocation
+request carries its own short budget in addition to `LogoutTimeout`, and always
+refuses to follow redirects so a discovery document cannot replay a refresh token
+to another host.
 
 ## Related
 
