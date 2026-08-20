@@ -26,10 +26,11 @@
 //	}
 //
 //	authSvc, err := wailspkceflow.New(wailspkceflow.Options{
-//	    Config:   pkceflow.Config{IssuerURL: "https://idp.example.com", ClientID: "my-app"},
-//	    Flow:     handler,
-//	    Store:    store,
-//	    AutoInit: true,
+//	    Config:     pkceflow.Config{IssuerURL: "https://idp.example.com", ClientID: "my-app"},
+//	    Flow:       handler,
+//	    Store:      store,
+//	    AutoInit:   true,
+//	    HTTPClient: &http.Client{Timeout: 30 * time.Second}, // the default client has none
 //	})
 //	if err != nil {
 //	    return err

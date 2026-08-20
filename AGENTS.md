@@ -105,6 +105,8 @@ module in the dev `go.work`.
 
 - Wrapper module currently depends on `go-pkceflow`.
 - Wrapper restore-error handling requires core `v0.9.0-beta.7` or newer.
+- `Options.HTTPClient` passes through to `pkceflow.WithHTTPClient`, which
+  requires core `v0.9.0-beta.2` or newer.
 - Example app may pin a newer core release than the wrapper module itself.
 - When changing core APIs, update wrapper usage, wrapper docs, and example app
   pins deliberately.

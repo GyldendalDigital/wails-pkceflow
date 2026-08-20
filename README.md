@@ -32,6 +32,7 @@ pinned release. This does not limit core `mobileflow` or Wails desktop use.
   access
 - Structured, frontend-friendly results with fixed, redacted error summaries
 - Backend-only `Pause` / `Resume` methods for explicit application policy
+- Injectable HTTP client for auth traffic: timeouts, proxies, custom CA bundles
 
 ## Installation
 
@@ -310,6 +311,32 @@ PowerShell equivalent:
 $env:GOWORK = "off"
 go run .
 ```
+
+## Custom HTTP client
+
+`Options.HTTPClient` is used for every outbound request the core client makes:
+OIDC discovery, JWKS fetching, token exchange, and token refresh.
+
+Set it. The standard library's default client has **no timeout**, so a slow or
+blackholed token endpoint blocks every caller of the token getter indefinitely,
+including whatever application code sits on that path.
+
+```go
+authSvc, err := wailspkceflow.New(wailspkceflow.Options{
+	Config: config,
+	Flow:   handler,
+	Store:  store,
+	HTTPClient: &http.Client{
+		Timeout: 30 * time.Second,
+	},
+})
+```
+
+Use the same field for corporate proxies, custom CA bundles or mutual TLS, and
+transport tuning. The client is passed to `pkceflow.WithHTTPClient` unchanged;
+the library never mutates it and never disables TLS verification on your behalf.
+Context deadlines (`LoginTimeout`, `LogoutTimeout`, and any `ctx` you pass) still
+apply independently of the client's own `Timeout`.
 
 ## Related
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"sync"
 
 	pkceflow "github.com/GyldendalDigital/go-pkceflow"
@@ -57,6 +58,20 @@ type Options struct {
 	// Logger is the structured logger for the client. Optional; defaults to
 	// slog.Default() when nil.
 	Logger *slog.Logger
+
+	// HTTPClient is the HTTP client used for every outbound request the core
+	// client makes: OIDC discovery, JWKS fetching during ID-token verification,
+	// token exchange, and token refresh. Optional; defaults to the standard
+	// library's default client when nil.
+	//
+	// Set it to apply a timeout to auth traffic. The default client has none, so
+	// a slow or blackholed token endpoint would otherwise block every caller of
+	// the token getter indefinitely. Also use it for corporate proxies, custom CA
+	// bundles or mutual TLS, and transport tuning.
+	//
+	// The client is passed through to pkceflow.WithHTTPClient unchanged; see that
+	// option for the full contract.
+	HTTPClient *http.Client
 
 	// AutoInit runs client.Init (OIDC discovery) in a background goroutine on
 	// ServiceStartup. Discovery failure is non-fatal and surfaces as the
@@ -140,6 +155,9 @@ func New(opts Options) (*AuthService, error) {
 	}
 	if opts.Logger != nil {
 		coreOpts = append(coreOpts, pkceflow.WithLogger(opts.Logger))
+	}
+	if opts.HTTPClient != nil {
+		coreOpts = append(coreOpts, pkceflow.WithHTTPClient(opts.HTTPClient))
 	}
 
 	client, err := pkceflow.New(opts.Config, opts.Flow, coreOpts...)
