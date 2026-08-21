@@ -61,8 +61,8 @@ type Options struct {
 
 	// HTTPClient is the HTTP client used for every outbound request the core
 	// client makes: OIDC discovery, JWKS fetching during ID-token verification,
-	// token exchange, and token refresh. Optional; defaults to the standard
-	// library's default client when nil.
+	// token exchange, token refresh, and token revocation on logout. Optional;
+	// defaults to the standard library's default client when nil.
 	//
 	// Set it to apply a timeout to auth traffic. The default client has none, so
 	// a slow or blackholed token endpoint would otherwise block every caller of
