@@ -158,6 +158,8 @@ on("oidcauth:token-refreshed", () => {
   notify({ title: "Token refreshed", message: "Access token renewed in the background.", kind: "ok", timeout: 5000 });
 });
 on("oidcauth:session-expired", () => {
+  // Fires as soon as the provider refuses the refresh token, which includes a
+  // deliberate revocation - the grace period no longer defers this.
   notify({ title: "Session expired", message: "Refresh token no longer valid. Please log in again.", kind: "err", timeout: 0 });
   refreshStatus();
 });
@@ -165,5 +167,9 @@ on("oidcauth:init-failed", () => {
   notify({ title: "Discovery failed", message: "Could not reach the IdP. Is Keycloak running on :8080?", kind: "warn", timeout: 0 });
 });
 
-// Initial render.
+// Initial render. This is load-bearing, not decorative: oidcauth:session-expired
+// is emitted at most once per refusal and can fire during ServiceStartup, before
+// this script has run and attached listeners, so a frontend that only listens for
+// the event can miss it permanently. AuthStatus() on mount is the authoritative
+// signal; the event is only for reacting promptly while the app is running.
 refreshStatus();

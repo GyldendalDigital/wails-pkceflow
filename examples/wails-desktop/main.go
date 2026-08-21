@@ -15,7 +15,9 @@ import (
 	"embed"
 	"io/fs"
 	"log"
+	"net/http"
 	"os"
+	"time"
 
 	pkceflow "github.com/GyldendalDigital/go-pkceflow"
 	"github.com/GyldendalDigital/go-pkceflow/desktopflow"
@@ -59,9 +61,15 @@ func main() {
 			IssuerURL: issuer,
 			ClientID:  clientID,
 		},
-		Flow:     flow,
-		Store:    store,
-		AutoInit: true, // run OIDC discovery in the background on startup
+		Flow:  flow,
+		Store: store,
+		// Always give auth traffic a deadline. http.DefaultClient has none, so a
+		// slow or blackholed token endpoint would block every caller of the token
+		// getter indefinitely - including whatever application code sits on that
+		// path. This client covers discovery, JWKS, token exchange, refresh, and
+		// revocation on logout.
+		HTTPClient: &http.Client{Timeout: 30 * time.Second},
+		AutoInit:   true, // run OIDC discovery in the background on startup
 	})
 	if err != nil {
 		log.Fatalf("auth service: %v", err)
