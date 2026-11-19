@@ -364,6 +364,41 @@ request carries its own short budget in addition to `LogoutTimeout`, and always
 refuses to follow redirects so a discovery document cannot replay a refresh token
 to another host.
 
+## One instance per token store
+
+If your provider rotates refresh tokens, run the desktop app as a single
+instance.
+
+Every instance of the app uses the same token store, because `filestore` derives
+its path from the app ID. Each instance runs its own refresh loop on the same
+schedule, so all of them present the same refresh token at about the same time.
+A provider that rotates refresh tokens accepts that token only once, and refuses
+the other instances. Depending on timing, an instance can record that refusal in
+the shared store, which ends the session for every instance. See the core
+[Grace Period Semantics](https://github.com/GyldendalDigital/go-pkceflow#grace-period-semantics).
+On a provider with reuse detection, the second presentation can also revoke the
+new token the first instance just received.
+
+Wails v3 can enforce a single instance. Use the same identifier you pass to
+`filestore.NewDefault`:
+
+```go
+app := application.New(application.Options{
+	Name: "My App",
+	SingleInstance: &application.SingleInstanceOptions{
+		UniqueID: "com.example.myapp",
+		OnSecondInstanceLaunch: func(application.SecondInstanceData) {
+			// Bring the existing window to the front.
+		},
+	},
+	// ...
+})
+```
+
+Windows and Linux start a new instance on every launch by default. On macOS,
+launching from Finder normally brings the running app to the front, but
+starting the binary directly runs a second copy.
+
 ## Related
 
 - [go-pkceflow](https://github.com/GyldendalDigital/go-pkceflow) -- The core OIDC library (framework-agnostic)
